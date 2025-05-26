@@ -11,11 +11,13 @@ dependencies = [
     "librosa>=0.11.0",
     "numpy>=2.2.6",
     "pillow>=11.2.1",
+    "pyroomacoustics>=0.8.4",
     "soundfile>=0.13.1",
     "torch>=2.7.0",
     "torchaudio>=2.7.0",
     "tqdm>=4.67.1",
     "wandb>=0.19.11",
+    "webdataset>=0.2.111",
 ]
 
 [dependency-groups]
@@ -36,6 +38,7 @@ ignore = [
     "T201",
     "COM812",
     "ISC001",
+    "PGH003",
 ]
 unfixable = [
     "F401",
@@ -74,3 +77,25 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 ignore_missing_imports = true
+
+[tool.pyrefly]
+
+#### configuring what to type check and where to import from
+project_includes = ["."]
+project_excludes = ["**/.[!/.]*", "**/tests"]
+search_path = ["."]
+site_package_path = [".venv/lib/python3.12/site-packages"]
+
+#### configuring your python environment
+python_platform = "linux"
+python_version = "3.12"
+python_interpreter = ".venv/bin/python3"
+
+#### configuring your type check settings
+ignore_errors_in_generated_code = true
+use_untyped_imports = true
+ignore_missing_source = true
+
+[tool.pyrefly.errors]
+bad-assignment = false
+invalid-argument = false

@@ -20,7 +20,7 @@ def main(path: str) -> None:
 
     tot_hours = tot_samples / SR / 3600
 
-    print("=== LibriTTS-R Dataset Stats ===")
+    print("=== Dataset Stats ===")
     print(f" utterances         : {utterances:,}")
     print(f" total duration     : {tot_hours:,.2f} h")
     print(" duration by language (h):")
