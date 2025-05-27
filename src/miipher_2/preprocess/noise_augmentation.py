@@ -41,6 +41,7 @@ class DegradationApplier:
         if len(self.format_encoding_pairs) == 0:
             return waveform
         param = random.choice(self.format_encoding_pairs)
+        print(param)
         augmented = torchaudio.functional.apply_codec(waveform=waveform.float(), sample_rate=sample_rate, **param)
         # mp3 encoding may increase the length of the waveform by zero-padding
         if waveform.size(1) != augmented.size(1):
