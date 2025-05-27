@@ -1,5 +1,5 @@
 [project]
-name = "open-miipher-2"
+name = "miipher-2"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,6 +9,7 @@ dependencies = [
     "datasets>=3.6.0",
     "hydra-core>=1.3.2",
     "librosa>=0.11.0",
+    "lightning>=2.5.1.post0",
     "numpy>=2.2.6",
     "pillow>=11.2.1",
     "pyroomacoustics>=0.8.4",
@@ -19,6 +20,16 @@ dependencies = [
     "wandb>=0.19.11",
     "webdataset>=0.2.111",
 ]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [
@@ -44,6 +55,7 @@ unfixable = [
     "F401",
     "F841",
 ]
+
 pydocstyle.convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
@@ -84,6 +96,7 @@ ignore_missing_imports = true
 project_includes = ["."]
 project_excludes = ["**/.[!/.]*", "**/tests"]
 search_path = ["."]
+import_root = ["."]
 site_package_path = [".venv/lib/python3.12/site-packages"]
 
 #### configuring your python environment

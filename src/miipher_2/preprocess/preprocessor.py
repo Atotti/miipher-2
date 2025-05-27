@@ -9,7 +9,7 @@ import webdataset
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-from src.preprocess import DegradationApplier
+from miipher_2.preprocess import DegradationApplier
 
 
 class Preprocessor:
@@ -30,7 +30,7 @@ class Preprocessor:
         self.text2phone_dict = {}
         self.n_repeats = cfg.preprocess.n_repeats
 
-    @torch.inference_mode() # type: ignore
+    @torch.inference_mode()  # type: ignore
     def process_utterance(
         self,
         basename: str,
@@ -46,9 +46,6 @@ class Preprocessor:
 
         with audio_file_path.open(mode="rb") as f:
             wav_bytes = f.read()
-
-        input_ids, input_phonemes = self.get_phonemes_input_ids(word_segmented_text, lang_code)
-
         samples: list[dict[str, bytes | str]] = []
         for i in range(self.n_repeats):
             degraded_speech = self.apply_noise(waveform)
@@ -67,24 +64,12 @@ class Preprocessor:
                 "degraded_speech.wav": buff.read(),
                 "resampled_speech.pth": webdataset.torch_dumps(waveform),
                 "word_segmented_text.txt": word_segmented_text,
-                "phoneme_input_ids.pth": webdataset.torch_dumps(input_ids),
-                "phoneme.txt": input_phonemes,
             }
             samples.append(sample)
         return samples
 
     def apply_noise(self, waveform: torch.Tensor) -> torch.Tensor:
         return self.degradation_model.process(waveform, self.sampling_rate)
-
-    @torch.inference_mode() # type: ignore
-    def get_phonemes_input_ids(self, word_segmented_text: str, lang_code: str):  # noqa: ANN201
-        if lang_code not in self.text2phone_dict:
-            self.text2phone_dict[lang_code] = hydra.utils.instantiate(
-                self.cfg.preprocess.text2phone_model, language=lang_code
-            )
-        input_phonemes = self.text2phone_dict[lang_code].infer_sentence(word_segmented_text)
-        input_ids = self.phoneme_tokenizer(input_phonemes, return_tensors="pt")
-        return input_ids, input_phonemes
 
     def build_from_path(self) -> None:
         pathlib.Path("/".join(self.cfg.preprocess.train_tar_sink.pattern.split("/")[:-1])).mkdir(exist_ok=True)

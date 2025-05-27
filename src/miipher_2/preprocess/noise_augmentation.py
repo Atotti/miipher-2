@@ -97,7 +97,7 @@ class DegradationApplier:
             augmented = waveform
         return augmented
 
-    def process(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor :
+    def process(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         if len(waveform.shape) == 1:
             waveform = waveform.unsqueeze(0)
         org_len = waveform.size(1)
