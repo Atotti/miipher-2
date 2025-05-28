@@ -40,9 +40,14 @@ class DegradationApplier:
     def applyCodec(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         if len(self.format_encoding_pairs) == 0:
             return waveform
-        param = random.choice(self.format_encoding_pairs)
-        print(param)
-        augmented = torchaudio.functional.apply_codec(waveform=waveform.float(), sample_rate=sample_rate, **param)
+        param: dict = random.choice(self.format_encoding_pairs)
+        audio_format: str = param["format"]
+        compression: int | None = param.get("compression")
+        codec_config = torchaudio.io.CodecConfig(compression_level=compression) if compression else None
+        eff = torchaudio.io.AudioEffector(format=audio_format, codec_config=codec_config)
+        wav_tc = waveform.transpose(0, 1)
+        aug_tc = eff.apply(wav_tc, sample_rate)
+        augmented = aug_tc.transpose(0, 1).contiguous()
         # mp3 encoding may increase the length of the waveform by zero-padding
         if waveform.size(1) != augmented.size(1):
             best_idx, augmented = align_waveform(waveform, augmented)
