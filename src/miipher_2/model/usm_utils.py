@@ -37,10 +37,7 @@ def load_usm_model(model_path: str | None = None, device: str = "cpu") -> nn.Mod
         return model
 
     except ImportError:
-        raise ImportError(
-            "transformers library required for USM model loading. "
-            "Install with: pip install transformers"
-        )
+        raise ImportError("transformers library required for USM model loading. Install with: pip install transformers")
 
 
 def create_miipher2_model(

@@ -3,17 +3,16 @@ Miipher2 Training and Fine-tuning implementation
 Following the paper's methodology for speech restoration with sequential training
 """
 
-import os
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
+import os
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import torchaudio
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from .miipher import Miipher2
 from .speechbrain_utils import create_hifigan_loss
@@ -47,34 +46,23 @@ class Miipher2Trainer:
 
         # Stage tracking (2-stage training with pre-trained vocoder)
         self.training_stage = "PA"  # "PA", "vocoder_finetune"
-        self.stage_steps = {
-            "PA": 800000,
-            "vocoder_finetune": 675000
-        }
+        self.stage_steps = {"PA": 800000, "vocoder_finetune": 675000}
         self.current_stage_step = 0
 
         # Get PA parameters as list
         pa_params = list(self.model.get_pa_parameters())
 
         # Separate optimizers for different stages
-        self.pa_optimizer = torch.optim.AdamW(
-            pa_params,
-            lr=learning_rate,
-            weight_decay=weight_decay
-        )
+        self.pa_optimizer = torch.optim.AdamW(pa_params, lr=learning_rate, weight_decay=weight_decay)
         self.vocoder_optimizer = torch.optim.AdamW(
-            self.vocoder.parameters(),
-            lr=learning_rate,
-            weight_decay=weight_decay
+            self.vocoder.parameters(), lr=learning_rate, weight_decay=weight_decay
         )
 
         # Current optimizer
         self.optimizer = self.pa_optimizer
 
         # Stage-specific schedulers
-        self.pa_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.pa_optimizer, T_max=self.stage_steps["PA"]
-        )
+        self.pa_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.pa_optimizer, T_max=self.stage_steps["PA"])
         self.vocoder_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.vocoder_optimizer, T_max=self.stage_steps["vocoder_finetune"]
         )
@@ -97,22 +85,19 @@ class Miipher2Trainer:
             all_params = pa_params + list(self.vocoder.parameters())
 
             self.optimizer = torch.optim.AdamW(
-                all_params,
-                lr=self.pa_optimizer.param_groups[0]['lr'],
-                weight_decay=1e-5
+                all_params, lr=self.pa_optimizer.param_groups[0]["lr"], weight_decay=1e-5
             )
             self.scheduler = self.vocoder_scheduler
 
-    def train_step(self, batch: Tuple[torch.Tensor, torch.Tensor, Any]) -> Dict[str, float]:
+    def train_step(self, batch: tuple[torch.Tensor, torch.Tensor, Any]) -> dict[str, float]:
         """Execute one training step based on current stage."""
         if self.training_stage == "PA":
             return self._train_pa_step(batch)
-        elif self.training_stage == "vocoder_finetune":
+        if self.training_stage == "vocoder_finetune":
             return self._train_vocoder_finetune_step(batch)
-        else:
-            raise ValueError(f"Unknown training stage: {self.training_stage}")
+        raise ValueError(f"Unknown training stage: {self.training_stage}")
 
-    def _train_pa_step(self, batch: Tuple[torch.Tensor, torch.Tensor, Any]) -> Dict[str, float]:
+    def _train_pa_step(self, batch: tuple[torch.Tensor, torch.Tensor, Any]) -> dict[str, float]:
         """Stage 1: Train Parallel Adapters only."""
         self.optimizer.zero_grad()
 
@@ -142,7 +127,7 @@ class Miipher2Trainer:
 
         return {"stage": "PA", "pa_loss": loss.item()}
 
-    def _train_vocoder_finetune_step(self, batch: Tuple[torch.Tensor, torch.Tensor, Any]) -> Dict[str, float]:
+    def _train_vocoder_finetune_step(self, batch: tuple[torch.Tensor, torch.Tensor, Any]) -> dict[str, float]:
         """Stage 2: Fine-tune vocoder with PA-predicted features."""
         self.optimizer.zero_grad()
 
@@ -177,7 +162,7 @@ class Miipher2Trainer:
             "mel_loss": mel_loss.item(),
             "feature_loss": feature_loss.item(),
             "l1_loss": l1_loss.item(),
-            "total_loss": total_loss.item()
+            "total_loss": total_loss.item(),
         }
 
     def _compute_pa_loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -188,37 +173,35 @@ class Miipher2Trainer:
         # Spectral convergence loss
         pred_norm = torch.norm(predicted, dim=-1, keepdim=True)
         target_norm = torch.norm(target, dim=-1, keepdim=True)
-        spectral_loss = F.mse_loss(pred_norm, target_norm) / torch.mean(target_norm ** 2)
+        spectral_loss = F.mse_loss(pred_norm, target_norm) / torch.mean(target_norm**2)
 
         return l1_loss + l2_loss + spectral_loss
 
     def _compute_mel_loss(self, generated_audio: torch.Tensor, target_audio: torch.Tensor) -> torch.Tensor:
         """Compute mel-spectrogram loss."""
         # Use HiFi-GAN mel loss if available
-        if 'mel_loss' in self.loss_functions:
-            return self.loss_functions['mel_loss'](generated_audio, target_audio)
+        if "mel_loss" in self.loss_functions:
+            return self.loss_functions["mel_loss"](generated_audio, target_audio)
         # Fallback to L1 loss
         return F.l1_loss(generated_audio, target_audio)
 
     def _compute_feature_matching_loss(self, generated_audio: torch.Tensor, target_audio: torch.Tensor) -> torch.Tensor:
         """Compute feature matching loss."""
         # Use HiFi-GAN feature matching loss if available
-        if 'feature_loss' in self.loss_functions:
-            return self.loss_functions['feature_loss'](generated_audio, target_audio)
+        if "feature_loss" in self.loss_functions:
+            return self.loss_functions["feature_loss"](generated_audio, target_audio)
         # Fallback to L1 loss
         return F.l1_loss(generated_audio, target_audio)
 
-    def _compute_vocoder_loss(self, generated_audio: torch.Tensor, target_audio: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def _compute_vocoder_loss(
+        self, generated_audio: torch.Tensor, target_audio: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
         """Compute combined vocoder loss."""
         mel_loss = self._compute_mel_loss(generated_audio, target_audio)
         feature_loss = self._compute_feature_matching_loss(generated_audio, target_audio)
         l1_loss = F.l1_loss(generated_audio, target_audio)
 
-        return {
-            'mel_loss': mel_loss,
-            'feature_loss': feature_loss,
-            'l1_loss': l1_loss
-        }
+        return {"mel_loss": mel_loss, "feature_loss": feature_loss, "l1_loss": l1_loss}
 
     def validate(self, val_dataloader: DataLoader) -> float:
         """Validation loop."""
@@ -262,18 +245,18 @@ class Miipher2Trainer:
         self.vocoder.train()
         return total_loss / max(num_batches, 1)
 
-    def save_checkpoint(self, path: str, epoch: Optional[int] = None) -> None:
+    def save_checkpoint(self, path: str, epoch: int | None = None) -> None:
         """Save training checkpoint with stage information."""
         checkpoint = {
-            'model_state_dict': self.model.state_dict(),
-            'vocoder_state_dict': self.vocoder.state_dict(),
-            'pa_optimizer_state_dict': self.pa_optimizer.state_dict(),
-            'vocoder_optimizer_state_dict': self.vocoder_optimizer.state_dict(),
-            'pa_scheduler_state_dict': self.pa_scheduler.state_dict(),
-            'vocoder_scheduler_state_dict': self.vocoder_scheduler.state_dict(),
-            'training_stage': self.training_stage,
-            'current_stage_step': self.current_stage_step,
-            'epoch': epoch
+            "model_state_dict": self.model.state_dict(),
+            "vocoder_state_dict": self.vocoder.state_dict(),
+            "pa_optimizer_state_dict": self.pa_optimizer.state_dict(),
+            "vocoder_optimizer_state_dict": self.vocoder_optimizer.state_dict(),
+            "pa_scheduler_state_dict": self.pa_scheduler.state_dict(),
+            "vocoder_scheduler_state_dict": self.vocoder_scheduler.state_dict(),
+            "training_stage": self.training_stage,
+            "current_stage_step": self.current_stage_step,
+            "epoch": epoch,
         }
         torch.save(checkpoint, path)
         print(f"Checkpoint saved: {path} (Stage: {self.training_stage}, Step: {self.current_stage_step})")
@@ -282,15 +265,15 @@ class Miipher2Trainer:
         """Load training checkpoint."""
         checkpoint = torch.load(path, map_location=self.device)
 
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.vocoder.load_state_dict(checkpoint['vocoder_state_dict'])
-        self.pa_optimizer.load_state_dict(checkpoint['pa_optimizer_state_dict'])
-        self.vocoder_optimizer.load_state_dict(checkpoint['vocoder_optimizer_state_dict'])
-        self.pa_scheduler.load_state_dict(checkpoint['pa_scheduler_state_dict'])
-        self.vocoder_scheduler.load_state_dict(checkpoint['vocoder_scheduler_state_dict'])
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.vocoder.load_state_dict(checkpoint["vocoder_state_dict"])
+        self.pa_optimizer.load_state_dict(checkpoint["pa_optimizer_state_dict"])
+        self.vocoder_optimizer.load_state_dict(checkpoint["vocoder_optimizer_state_dict"])
+        self.pa_scheduler.load_state_dict(checkpoint["pa_scheduler_state_dict"])
+        self.vocoder_scheduler.load_state_dict(checkpoint["vocoder_scheduler_state_dict"])
 
-        self.training_stage = checkpoint.get('training_stage', 'PA')
-        self.current_stage_step = checkpoint.get('current_stage_step', 0)
+        self.training_stage = checkpoint.get("training_stage", "PA")
+        self.current_stage_step = checkpoint.get("current_stage_step", 0)
 
         # Set current optimizer and scheduler based on stage
         if self.training_stage == "PA":
@@ -300,24 +283,22 @@ class Miipher2Trainer:
             pa_params = list(self.model.get_pa_parameters())
             all_params = pa_params + list(self.vocoder.parameters())
             self.optimizer = torch.optim.AdamW(
-                all_params,
-                lr=self.vocoder_optimizer.param_groups[0]['lr'],
-                weight_decay=1e-5
+                all_params, lr=self.vocoder_optimizer.param_groups[0]["lr"], weight_decay=1e-5
             )
             self.scheduler = self.vocoder_scheduler
 
         print(f"Checkpoint loaded: {path} (Stage: {self.training_stage}, Step: {self.current_stage_step})")
-        return checkpoint.get('epoch', 0)
+        return checkpoint.get("epoch", 0)
 
     def fine_tune(
         self,
         train_dataloader: DataLoader,
-        val_dataloader: Optional[DataLoader] = None,
+        val_dataloader: DataLoader | None = None,
         epochs: int = 10,
         save_dir: str = "./checkpoints",
         validate_every: int = 1000,
         save_every: int = 5000,
-    ) -> Dict[str, List[float]]:
+    ) -> dict[str, list[float]]:
         """
         Fine-tune the model following the sequential training strategy
 
@@ -334,7 +315,7 @@ class Miipher2Trainer:
         """
         os.makedirs(save_dir, exist_ok=True)
 
-        history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+        history: dict[str, list[float]] = {"train_loss": [], "val_loss": []}
         global_step = 0
 
         print(f"Starting sequential training with stage: {self.training_stage}")
@@ -374,8 +355,10 @@ class Miipher2Trainer:
                     self.save_checkpoint(checkpoint_path, epoch)
 
                 # Check if all stages completed
-                if (self.training_stage == "vocoder_finetune" and
-                    self.current_stage_step >= self.stage_steps["vocoder_finetune"]):
+                if (
+                    self.training_stage == "vocoder_finetune"
+                    and self.current_stage_step >= self.stage_steps["vocoder_finetune"]
+                ):
                     print("All training stages completed!")
                     final_path = os.path.join(save_dir, "final_model.pt")
                     self.save_checkpoint(final_path, epoch)
@@ -390,10 +373,7 @@ class Miipher2Trainer:
 
 
 def create_trainer(
-    model: Miipher2,
-    vocoder: nn.Module,
-    device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    **kwargs: Any
+    model: Miipher2, vocoder: nn.Module, device: str = "cuda" if torch.cuda.is_available() else "cpu", **kwargs: Any
 ) -> Miipher2Trainer:
     """
     Create a Miipher2 trainer instance

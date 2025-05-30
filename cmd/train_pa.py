@@ -12,26 +12,22 @@ Usage:
     python cmd/train_pa.py hydra.run.dir=outputs/pa_training
 """
 
+import os
+import sys
+from pathlib import Path
+
 import hydra
+import torch
 from lightning.pytorch import seed_everything
 from omegaconf import DictConfig
-import torch
 from torch.utils.data import DataLoader
-from pathlib import Path
-import sys
-import os
 
 # Add src directory to path for imports
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from miipher_2.model import (
-    Miipher2,
-    Miipher2Trainer,
-    load_usm_model,
-    SpeechBrainHiFiGAN
-)
 from miipher_2.data import AudioDataset  # If exists
+from miipher_2.model import Miipher2, Miipher2Trainer, SpeechBrainHiFiGAN, load_usm_model
 
 
 @hydra.main(version_base=None, config_path="../configs/", config_name="train_pa")
@@ -46,10 +42,10 @@ def main(cfg: DictConfig) -> None:
     """
 
     # Set random seed for reproducibility
-    seed_everything(cfg.get('seed', 172957))
+    seed_everything(cfg.get("seed", 172957))
 
     print("=== Miipher-2 Parallel Adapters Training (Paper Stage 1) ===")
-    print(f"Target steps: 800,000 (as per paper)")
+    print("Target steps: 800,000 (as per paper)")
     print(f"Config: {cfg}")
 
     # Setup device
@@ -62,10 +58,7 @@ def main(cfg: DictConfig) -> None:
 
     # Load vocoder (not used in PA training but needed for model initialization)
     print("Loading vocoder (SpeechBrain HiFi-GAN)...")
-    vocoder = SpeechBrainHiFiGAN(
-        model_id=cfg.model.hifigan_model_id,
-        device=device
-    )
+    vocoder = SpeechBrainHiFiGAN(model_id=cfg.model.hifigan_model_id, device=device)
 
     # Initialize Miipher2 model
     print("Initializing Miipher2 model...")
@@ -76,7 +69,7 @@ def main(cfg: DictConfig) -> None:
         pa_input_output_dim=cfg.model.pa_input_output_dim,
         freeze_usm=True,  # Paper requirement: frozen USM
         hifigan_model_id=cfg.model.hifigan_model_id,
-        device=device
+        device=device,
     )
 
     # Initialize trainer for sequential training
@@ -101,18 +94,23 @@ def main(cfg: DictConfig) -> None:
     try:
         # Try to use custom dataset if available
         from miipher_2.data import create_dataloader
+
         train_dataloader = create_dataloader(
             cfg.data.train_dataset_path,
             batch_size=cfg.training.batch_size,
             num_workers=cfg.training.num_workers,
-            shuffle=True
+            shuffle=True,
         )
-        val_dataloader = create_dataloader(
-            cfg.data.val_dataset_path,
-            batch_size=cfg.training.batch_size,
-            num_workers=cfg.training.num_workers,
-            shuffle=False
-        ) if cfg.data.get('val_dataset_path') else None
+        val_dataloader = (
+            create_dataloader(
+                cfg.data.val_dataset_path,
+                batch_size=cfg.training.batch_size,
+                num_workers=cfg.training.num_workers,
+                shuffle=False,
+            )
+            if cfg.data.get("val_dataset_path")
+            else None
+        )
     except ImportError:
         # Fallback to basic dataset implementation
         print("Using basic dataset implementation...")
@@ -133,7 +131,7 @@ def main(cfg: DictConfig) -> None:
         val_dataloader = None
 
     # Setup output directory
-    output_dir = Path(cfg.get('output_dir', './outputs/pa_training'))
+    output_dir = Path(cfg.get("output_dir", "./outputs/pa_training"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_dir = output_dir / "checkpoints"
@@ -176,6 +174,7 @@ def main(cfg: DictConfig) -> None:
     except Exception as e:
         print(f"Training failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

@@ -2,10 +2,11 @@
 Utilities for SpeechBrain HiFi-GAN integration with Miipher-2
 """
 
-import torch
-import torch.nn as nn
-from typing import Optional, Union, Dict, Any, List
 import warnings
+from typing import Any, Dict, List, Optional, Union
+
+import torch
+from torch import nn
 
 
 class SpeechBrainHiFiGAN(nn.Module):
@@ -18,8 +19,8 @@ class SpeechBrainHiFiGAN(nn.Module):
         self.model_id = model_id
         self.device = device
         # Initialize attributes
-        self.hifigan: Optional[Any] = None
-        self.generator: Optional[nn.Module] = None
+        self.hifigan: Any | None = None
+        self.generator: nn.Module | None = None
         self._load_model()
 
     def _load_model(self) -> None:
@@ -29,18 +30,14 @@ class SpeechBrainHiFiGAN(nn.Module):
             from speechbrain.pretrained import HIFIGAN
 
             # Load the pretrained HiFi-GAN model
-            self.hifigan = HIFIGAN.from_hparams(
-                source=self.model_id,
-                run_opts={"device": self.device}
-            )
+            self.hifigan = HIFIGAN.from_hparams(source=self.model_id, run_opts={"device": self.device})
 
             # Extract the generator for direct use
             self.generator = self.hifigan.hifi_gan
 
         except ImportError:
             warnings.warn(
-                "SpeechBrain is not installed. Using fallback generator. "
-                "Install with: pip install speechbrain"
+                "SpeechBrain is not installed. Using fallback generator. Install with: pip install speechbrain"
             )
             self._create_fallback_generator()
         except Exception as e:
@@ -62,7 +59,7 @@ class SpeechBrainHiFiGAN(nn.Module):
             nn.ReLU(),
             nn.Upsample(scale_factor=2),
             nn.Conv1d(128, 1, kernel_size=7, padding=3),
-            nn.Tanh()
+            nn.Tanh(),
         )
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
@@ -83,7 +80,7 @@ class SpeechBrainHiFiGAN(nn.Module):
             features = features.transpose(1, 2)
 
         # Generate waveform
-        if self.hifigan is not None and hasattr(self.hifigan, 'decode_batch'):
+        if self.hifigan is not None and hasattr(self.hifigan, "decode_batch"):
             # Use SpeechBrain's decode method
             waveform = self.hifigan.decode_batch(features)
             if isinstance(waveform, list):
@@ -98,8 +95,7 @@ class SpeechBrainHiFiGAN(nn.Module):
 
 
 def load_speechbrain_hifigan(
-    model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS",
-    device: str = "cpu"
+    model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS", device: str = "cpu"
 ) -> SpeechBrainHiFiGAN:
     """
     Load SpeechBrain HiFi-GAN model
@@ -114,7 +110,7 @@ def load_speechbrain_hifigan(
     return SpeechBrainHiFiGAN(model_id=model_id, device=device)
 
 
-def create_hifigan_loss() -> Dict[str, nn.Module]:
+def create_hifigan_loss() -> dict[str, nn.Module]:
     """
     Create loss functions for HiFi-GAN training
 
@@ -145,10 +141,7 @@ def create_hifigan_loss() -> Dict[str, nn.Module]:
             import torchaudio.transforms as T
 
             mel_transform = T.MelSpectrogram(
-                sample_rate=self.sample_rate,
-                n_fft=self.n_fft,
-                hop_length=self.hop_length,
-                n_mels=self.n_mels
+                sample_rate=self.sample_rate, n_fft=self.n_fft, hop_length=self.hop_length, n_mels=self.n_mels
             ).to(audio.device)
 
             return mel_transform(audio)
@@ -156,12 +149,12 @@ def create_hifigan_loss() -> Dict[str, nn.Module]:
     class FeatureMatchingLoss(nn.Module):
         """Feature matching loss"""
 
-        def forward(self, pred_features: List[torch.Tensor], target_features: List[torch.Tensor]) -> torch.Tensor:
+        def forward(self, pred_features: list[torch.Tensor], target_features: list[torch.Tensor]) -> torch.Tensor:
             if not pred_features:
                 return torch.tensor(0.0)
 
             loss = torch.tensor(0.0, device=pred_features[0].device)
-            for pred_feat, target_feat in zip(pred_features, target_features):
+            for pred_feat, target_feat in zip(pred_features, target_features, strict=False):
                 loss += nn.functional.l1_loss(pred_feat, target_feat)
             return loss / len(pred_features)
 
@@ -169,5 +162,5 @@ def create_hifigan_loss() -> Dict[str, nn.Module]:
         "mel_loss": MelSpectrogramLoss(),
         "feature_matching_loss": FeatureMatchingLoss(),
         "l1_loss": nn.L1Loss(),
-        "mse_loss": nn.MSELoss()
+        "mse_loss": nn.MSELoss(),
     }

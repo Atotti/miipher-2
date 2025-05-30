@@ -1,4 +1,5 @@
-from typing import Optional, Tuple, List, Iterator
+from collections.abc import Iterator
+from typing import List, Optional, Tuple
 
 import torch
 from torch import nn
@@ -42,7 +43,7 @@ class Miipher2(nn.Module):
         # Get number of layers from HuBERT encoder
         try:
             # For HuBERT model structure
-            if hasattr(self.usm_model, 'encoder') and hasattr(self.usm_model.encoder, 'layers'):
+            if hasattr(self.usm_model, "encoder") and hasattr(self.usm_model.encoder, "layers"):
                 num_layers = len(self.usm_model.encoder.layers)
             else:
                 # Fallback to reasonable default
@@ -69,7 +70,7 @@ class Miipher2(nn.Module):
             yield from adapter.parameters()
 
     def forward(
-        self, noisy_waveform: torch.Tensor, attention_mask: Optional[torch.Tensor] = None, use_vocoder: bool = True
+        self, noisy_waveform: torch.Tensor, attention_mask: torch.Tensor | None = None, use_vocoder: bool = True
     ) -> torch.Tensor:
         """
         Forward pass of Miipher-2
@@ -95,7 +96,7 @@ class Miipher2(nn.Module):
         return clean_waveform
 
     def extract_clean_features(
-        self, noisy_waveform: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+        self, noisy_waveform: torch.Tensor, attention_mask: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Extract clean USM features using parallel adapters
@@ -118,7 +119,7 @@ class Miipher2(nn.Module):
 
             # Apply parallel adapters to each layer
             adapted_states = []
-            for layer_idx, (hidden_state, adapter) in enumerate(zip(hidden_states_list, self.parallel_adapters)):
+            for layer_idx, (hidden_state, adapter) in enumerate(zip(hidden_states_list, self.parallel_adapters, strict=False)):
                 # Apply parallel adapter and add residual connection
                 adapter_output = adapter(hidden_state)
                 adapted_state = hidden_state + adapter_output
@@ -130,7 +131,7 @@ class Miipher2(nn.Module):
 
         return clean_features
 
-    def inference(self, noisy_waveform: torch.Tensor, chunk_length: Optional[int] = None) -> torch.Tensor:
+    def inference(self, noisy_waveform: torch.Tensor, chunk_length: int | None = None) -> torch.Tensor:
         """
         Efficient inference for long sequences with optional chunking
 
@@ -194,7 +195,7 @@ class Miipher2Loss(nn.Module):
         self,
         predicted_features: torch.Tensor,
         target_features: torch.Tensor,
-        feature_mask: Optional[torch.Tensor] = None,
+        feature_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute combined loss for feature prediction

@@ -7,21 +7,22 @@ Usage:
     python -m cmd.train_vocoder hydra.run.dir=outputs/vocoder_training
 """
 
+import sys
+from pathlib import Path
+
 import hydra
+import torch
 from lightning.pytorch import seed_everything
 from omegaconf import DictConfig
-import torch
 from torch.utils.data import DataLoader
-from pathlib import Path
-import sys
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
+from example_finetune import AudioDataset
 from miipher import Miipher2
 from speechbrain_utils import load_speechbrain_vocoder
 from trainer import Miipher2Trainer
-from example_finetune import AudioDataset
 
 
 @hydra.main(version_base=None, config_path="../configs/", config_name="train_vocoder")
@@ -29,7 +30,7 @@ def main(cfg: DictConfig) -> None:
     """Main function for vocoder fine-tuning."""
 
     # Set random seed
-    seed_everything(cfg.get('seed', 172957))
+    seed_everything(cfg.get("seed", 172957))
 
     print("=== Miipher-2 Vocoder Fine-tuning ===")
     print(f"Config: {cfg}")
@@ -44,12 +45,7 @@ def main(cfg: DictConfig) -> None:
     vocoder = load_speechbrain_vocoder(device=device)
 
     # Initialize trainer
-    trainer = Miipher2Trainer(
-        model=model,
-        vocoder=vocoder,
-        device=device,
-        learning_rate=cfg.training.learning_rate
-    )
+    trainer = Miipher2Trainer(model=model, vocoder=vocoder, device=device, learning_rate=cfg.training.learning_rate)
 
     # Force vocoder fine-tuning stage
     trainer.training_stage = "vocoder_finetune"
@@ -57,7 +53,7 @@ def main(cfg: DictConfig) -> None:
     print(f"Training stage: {trainer.training_stage}")
 
     # Load PA checkpoint if specified
-    if cfg.get('pa_checkpoint'):
+    if cfg.get("pa_checkpoint"):
         print(f"Loading PA weights from: {cfg.pa_checkpoint}")
         trainer.load_checkpoint(cfg.pa_checkpoint)
         trainer.training_stage = "vocoder_finetune"  # Reset to vocoder stage
@@ -71,7 +67,7 @@ def main(cfg: DictConfig) -> None:
     val_dataset = setup_dataset(cfg.data, train=False)
 
     # Debug mode
-    if cfg.get('debug', False):
+    if cfg.get("debug", False):
         train_dataset = torch.utils.data.Subset(train_dataset, range(min(100, len(train_dataset))))
         val_dataset = torch.utils.data.Subset(val_dataset, range(min(20, len(val_dataset))))
         print("Debug mode: Using reduced dataset")
@@ -84,22 +80,22 @@ def main(cfg: DictConfig) -> None:
         train_dataset,
         batch_size=cfg.training.batch_size,
         shuffle=True,
-        num_workers=cfg.training.get('num_workers', 4),
+        num_workers=cfg.training.get("num_workers", 4),
         pin_memory=True,
-        drop_last=True
+        drop_last=True,
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=cfg.training.batch_size,
         shuffle=False,
-        num_workers=cfg.training.get('num_workers', 4),
+        num_workers=cfg.training.get("num_workers", 4),
         pin_memory=True,
-        drop_last=False
+        drop_last=False,
     )
 
     # Resume from vocoder checkpoint if specified
-    if cfg.get('resume_checkpoint'):
+    if cfg.get("resume_checkpoint"):
         print(f"Resuming from checkpoint: {cfg.resume_checkpoint}")
         trainer.load_checkpoint(cfg.resume_checkpoint)
 
@@ -118,19 +114,18 @@ def setup_dataset(data_cfg: DictConfig, train: bool = True):
             clean_dir=data_cfg.clean_dir,
             noisy_dir=data_cfg.noisy_dir,
             sample_rate=data_cfg.sample_rate,
-            segment_length=data_cfg.get('segment_length', 4.0),
-            snr_range=data_cfg.get('snr_range', [5, 30]),
-            noise_types=data_cfg.get('noise_types', ['white', 'pink']),
-            augment=True
+            segment_length=data_cfg.get("segment_length", 4.0),
+            snr_range=data_cfg.get("snr_range", [5, 30]),
+            noise_types=data_cfg.get("noise_types", ["white", "pink"]),
+            augment=True,
         )
-    else:
-        return AudioDataset(
-            clean_dir=data_cfg.val_clean_dir,
-            noisy_dir=data_cfg.val_noisy_dir,
-            sample_rate=data_cfg.sample_rate,
-            segment_length=data_cfg.get('segment_length', 4.0),
-            augment=False
-        )
+    return AudioDataset(
+        clean_dir=data_cfg.val_clean_dir,
+        noisy_dir=data_cfg.val_noisy_dir,
+        sample_rate=data_cfg.sample_rate,
+        segment_length=data_cfg.get("segment_length", 4.0),
+        augment=False,
+    )
 
 
 def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig):
@@ -138,9 +133,9 @@ def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig):
 
     # Training parameters
     max_steps = trainer.stage_steps["vocoder_finetune"]  # 675k steps
-    log_interval = cfg.training.get('log_interval', 100)
-    save_interval = cfg.training.get('save_interval', 5000)
-    val_interval = cfg.training.get('val_interval', 1000)
+    log_interval = cfg.training.get("log_interval", 100)
+    save_interval = cfg.training.get("save_interval", 5000)
+    val_interval = cfg.training.get("val_interval", 1000)
 
     print(f"Target vocoder steps: {max_steps}")
     print(f"Log interval: {log_interval}")
@@ -148,7 +143,7 @@ def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig):
     print(f"Validation interval: {val_interval}")
 
     total_steps = trainer.current_stage_step
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
 
     # Training loop
     try:

@@ -7,12 +7,13 @@ Usage:
     python -m cmd.inference input_audio=/path/to/noisy.wav output_audio=/path/to/clean.wav
 """
 
+import sys
+from pathlib import Path
+
 import hydra
-from omegaconf import DictConfig
 import torch
 import torchaudio
-from pathlib import Path
-import sys
+from omegaconf import DictConfig
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -61,9 +62,9 @@ def main(cfg: DictConfig) -> None:
     if cfg.checkpoint:
         print(f"Loading checkpoint: {cfg.checkpoint}")
         checkpoint = torch.load(cfg.checkpoint, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        if 'vocoder_state_dict' in checkpoint:
-            vocoder.load_state_dict(checkpoint['vocoder_state_dict'])
+        model.load_state_dict(checkpoint["model_state_dict"])
+        if "vocoder_state_dict" in checkpoint:
+            vocoder.load_state_dict(checkpoint["vocoder_state_dict"])
     else:
         print("Warning: No checkpoint specified. Using untrained model.")
 
@@ -78,7 +79,7 @@ def main(cfg: DictConfig) -> None:
         noisy_audio = noisy_audio.to(device)
 
         # Process in chunks if audio is too long
-        if cfg.get('chunk_length') and noisy_audio.shape[1] > cfg.chunk_length * sample_rate:
+        if cfg.get("chunk_length") and noisy_audio.shape[1] > cfg.chunk_length * sample_rate:
             clean_audio = process_long_audio(model, noisy_audio, cfg, sample_rate)
         else:
             # Direct inference
@@ -96,7 +97,7 @@ def main(cfg: DictConfig) -> None:
     torchaudio.save(output_path, clean_audio, sample_rate)
 
     # Optional: compute and display metrics
-    if cfg.get('compute_metrics', False) and cfg.get('reference_audio'):
+    if cfg.get("compute_metrics", False) and cfg.get("reference_audio"):
         compute_metrics(clean_audio, cfg.reference_audio, sample_rate)
 
     print("Inference completed!")
@@ -106,7 +107,7 @@ def process_long_audio(model, noisy_audio, cfg: DictConfig, sample_rate: int):
     """Process long audio in chunks with overlap."""
 
     chunk_length = int(cfg.chunk_length * sample_rate)
-    overlap_length = int(cfg.get('overlap_length', 0.5) * sample_rate)
+    overlap_length = int(cfg.get("overlap_length", 0.5) * sample_rate)
 
     audio_length = noisy_audio.shape[1]
     clean_chunks = []
@@ -174,7 +175,7 @@ def compute_metrics(clean_audio, reference_path, sample_rate):
         ref_audio = ref_audio[:min_length].numpy()
 
         # Compute PESQ
-        pesq_score = pesq.pesq(sample_rate, ref_audio, clean_audio, 'wb')
+        pesq_score = pesq.pesq(sample_rate, ref_audio, clean_audio, "wb")
         print(f"PESQ Score: {pesq_score:.3f}")
 
         # Compute STOI
