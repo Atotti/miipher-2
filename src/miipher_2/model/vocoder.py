@@ -10,6 +10,5 @@ class SpeechBrainHiFiGAN(nn.Module):
         super().__init__()
         self.vocoder: HIFIGAN = HIFIGAN.from_hparams(source=model_id, run_opts={"device": str(device)})
 
-
     def forward(self, mel_or_latent: torch.Tensor) -> torch.Tensor:  # (B, T, n_mel)
         return self.vocoder.decode_batch(mel_or_latent).squeeze(1)  # (B, T)

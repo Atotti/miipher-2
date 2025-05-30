@@ -1,5 +1,4 @@
-from collections.abc import Iterable
-from typing import Callable
+from collections.abc import Callable, Iterable
 
 import torch
 from peft import inject_adapter_in_model
@@ -67,7 +66,6 @@ class Miipher2(nn.Module):
         # 5  HiFi-GAN vocoder
         self.use_vocoder = use_vocoder
         self.hifigan = SpeechBrainHiFiGAN(model_id="speechbrain/hifigan-hubert-k1000-LibriTTS", device=self.device)
-
 
     # ---------------------------------------------------------------------
     #  Helper - attach PA to one Transformer layer
