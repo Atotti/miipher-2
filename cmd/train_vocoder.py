@@ -128,7 +128,7 @@ def setup_dataset(data_cfg: DictConfig, train: bool = True):
     )
 
 
-def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig):
+def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig) -> None:
     """Run vocoder fine-tuning loop."""
 
     # Training parameters
@@ -152,7 +152,7 @@ def run_vocoder_training(trainer, train_loader, val_loader, cfg: DictConfig):
             epoch += 1
             print(f"\n=== Epoch {epoch} ===")
 
-            for batch_idx, batch in enumerate(train_loader):
+            for _batch_idx, batch in enumerate(train_loader):
                 if total_steps >= max_steps:
                     break
 

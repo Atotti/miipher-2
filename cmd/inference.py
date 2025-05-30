@@ -36,7 +36,8 @@ def main(cfg: DictConfig) -> None:
     # Load input audio
     input_path = Path(cfg.input_audio)
     if not input_path.exists():
-        raise FileNotFoundError(f"Input audio file not found: {input_path}")
+        msg = f"Input audio file not found: {input_path}"
+        raise FileNotFoundError(msg)
 
     print(f"Loading input audio: {input_path}")
     noisy_audio, sample_rate = torchaudio.load(input_path)
@@ -149,7 +150,7 @@ def process_long_audio(model, noisy_audio, cfg: DictConfig, sample_rate: int):
     return torch.cat(clean_chunks, dim=1)
 
 
-def compute_metrics(clean_audio, reference_path, sample_rate):
+def compute_metrics(clean_audio, reference_path, sample_rate) -> None:
     """Compute and display audio quality metrics."""
     try:
         import pesq

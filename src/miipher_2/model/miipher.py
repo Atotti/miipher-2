@@ -55,7 +55,7 @@ class Miipher2(nn.Module):
         self.parallel_adapters = nn.ModuleList()
 
         # Add parallel adapters to each layer
-        for layer_idx in range(num_layers):
+        for _layer_idx in range(num_layers):
             adapter = ParallelAdapter(
                 input_dim=pa_input_output_dim, hidden_dim=pa_hidden_dim, output_dim=pa_input_output_dim
             )
@@ -91,9 +91,7 @@ class Miipher2(nn.Module):
             return clean_features
 
         # Synthesize clean waveform using SpeechBrain HiFi-GAN
-        clean_waveform = self.hifigan(clean_features)
-
-        return clean_waveform
+        return self.hifigan(clean_features)
 
     def extract_clean_features(
         self, noisy_waveform: torch.Tensor, attention_mask: torch.Tensor | None = None
@@ -119,7 +117,9 @@ class Miipher2(nn.Module):
 
             # Apply parallel adapters to each layer
             adapted_states = []
-            for layer_idx, (hidden_state, adapter) in enumerate(zip(hidden_states_list, self.parallel_adapters, strict=False)):
+            for layer_idx, (hidden_state, adapter) in enumerate(
+                zip(hidden_states_list, self.parallel_adapters, strict=False)
+            ):
                 # Apply parallel adapter and add residual connection
                 adapter_output = adapter(hidden_state)
                 adapted_state = hidden_state + adapter_output
@@ -145,8 +145,7 @@ class Miipher2(nn.Module):
         self.eval()
         with torch.no_grad():
             if chunk_length is None:
-                clean_waveform = self.forward(noisy_waveform, use_vocoder=True)
-                return clean_waveform
+                return self.forward(noisy_waveform, use_vocoder=True)
             # Process in chunks for memory efficiency
             return self._chunked_inference(noisy_waveform, chunk_length)
 
@@ -185,7 +184,7 @@ class Miipher2Loss(nn.Module):
     Combines L1, L2, and spectral convergence losses for feature prediction
     """
 
-    def __init__(self, l1_weight: float = 1.0, l2_weight: float = 1.0, sc_weight: float = 1.0):
+    def __init__(self, l1_weight: float = 1.0, l2_weight: float = 1.0, sc_weight: float = 1.0) -> None:
         super().__init__()
         self.l1_weight = l1_weight
         self.l2_weight = l2_weight
@@ -222,9 +221,7 @@ class Miipher2Loss(nn.Module):
         # Spectral convergence loss
         sc_loss = self._spectral_convergence_loss(predicted_features, target_features)
 
-        total_loss = self.l1_weight * l1_loss + self.l2_weight * l2_loss + self.sc_weight * sc_loss
-
-        return total_loss
+        return self.l1_weight * l1_loss + self.l2_weight * l2_loss + self.sc_weight * sc_loss
 
     def _spectral_convergence_loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
@@ -245,6 +242,4 @@ class Miipher2Loss(nn.Module):
         numerator = torch.norm(pred_fft - target_fft, p="fro")
         denominator = torch.norm(target_fft, p="fro")
 
-        sc_loss = numerator / (denominator + 1e-8)
-
-        return sc_loss
+        return numerator / (denominator + 1e-8)

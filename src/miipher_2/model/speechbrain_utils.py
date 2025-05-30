@@ -1,5 +1,5 @@
 """
-Utilities for SpeechBrain HiFi-GAN integration with Miipher-2
+Utilities for integrating SpeechBrain models, particularly the HiFiGAN vocoder.
 """
 
 import warnings
@@ -11,85 +11,99 @@ from torch import nn
 
 class SpeechBrainHiFiGAN(nn.Module):
     """
-    Wrapper for SpeechBrain HiFi-GAN vocoder
+    Wrapper for SpeechBrain's HiFiGAN model for vocoding.
     """
 
-    def __init__(self, model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS", device: str = "cpu"):
+    def __init__(self, model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS", device: str = "cpu") -> None:
         super().__init__()
         self.model_id = model_id
         self.device = device
-        # Initialize attributes
-        self.hifigan: Any | None = None
-        self.generator: nn.Module | None = None
+        self.generator = None
+
         self._load_model()
 
     def _load_model(self) -> None:
-        """Load SpeechBrain HiFi-GAN model"""
+        """Load the SpeechBrain HiFiGAN model."""
         try:
-            # Try importing speechbrain
-            from speechbrain.pretrained import HIFIGAN
+            # Try to import speechbrain
+            try:
+                # pylint: disable=import-outside-toplevel
+                from speechbrain.inference.vocoders import HiFiGAN
 
-            # Load the pretrained HiFi-GAN model
-            self.hifigan = HIFIGAN.from_hparams(source=self.model_id, run_opts={"device": self.device})
+                self.generator = HiFiGAN.from_hparams(source=self.model_id)
+                self.generator.to(self.device)
+                self.generator.eval()
 
-            # Extract the generator for direct use
-            self.generator = self.hifigan.hifi_gan
-
-        except ImportError:
-            warnings.warn(
-                "SpeechBrain is not installed. Using fallback generator. Install with: pip install speechbrain"
-            )
-            self._create_fallback_generator()
-        except Exception as e:
-            warnings.warn(f"Failed to load {self.model_id}: {e}")
+            except ImportError:
+                warnings.warn(
+                    "SpeechBrain is not installed. Using fallback generator. Install with: pip install speechbrain",
+                    stacklevel=2,
+                )
+                self._create_fallback_generator()
+        except Exception as e:  # noqa: BLE001
+            msg = f"Failed to load {self.model_id}: {e}"
+            warnings.warn(msg, stacklevel=2)
             # Fallback to basic generator
             self._create_fallback_generator()
 
     def _create_fallback_generator(self) -> None:
-        """Create a fallback generator if SpeechBrain model fails to load"""
-        # Simple CNN-based generator as fallback
-        self.generator = nn.Sequential(
-            nn.Conv1d(1024, 512, kernel_size=7, padding=3),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2),
-            nn.Conv1d(512, 256, kernel_size=7, padding=3),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2),
-            nn.Conv1d(256, 128, kernel_size=7, padding=3),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2),
-            nn.Conv1d(128, 1, kernel_size=7, padding=3),
-            nn.Tanh(),
-        )
+        """Create a basic fallback vocoder if SpeechBrain is not available."""
+        # This is a simple fallback - in practice you might want something more sophisticated
+
+        class BasicVocoder(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                # Simple conv layers for basic vocoding
+                self.conv_layers = nn.Sequential(
+                    nn.ConvTranspose1d(1024, 512, kernel_size=4, stride=2, padding=1),
+                    nn.LeakyReLU(0.1),
+                    nn.ConvTranspose1d(512, 256, kernel_size=4, stride=2, padding=1),
+                    nn.LeakyReLU(0.1),
+                    nn.ConvTranspose1d(256, 128, kernel_size=4, stride=2, padding=1),
+                    nn.LeakyReLU(0.1),
+                    nn.ConvTranspose1d(128, 1, kernel_size=4, stride=2, padding=1),
+                    nn.Tanh(),
+                )
+
+            def forward(self, features: torch.Tensor) -> torch.Tensor:
+                # Simple upsampling
+                if features.dim() == 3:  # noqa: PLR2004
+                    features = features.transpose(1, 2)  # (B, T, D) -> (B, D, T)
+                return self.conv_layers(features)
+
+        self.generator = BasicVocoder()
+        self.generator.to(self.device)
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         """
-        Generate waveform from features
+        Generate waveform from features.
 
         Args:
             features: Input features (B, T, D) or (B, D, T)
 
         Returns:
-            waveform: Generated waveform (B, T_wav)
+            Generated waveform (B, T)
         """
         if self.generator is None:
-            raise RuntimeError("Generator not initialized")
+            msg = "Generator not initialized"
+            raise RuntimeError(msg)
 
         # Ensure features are in the right format (B, D, T)
-        if features.dim() == 3 and features.size(-1) != features.size(1):
+        if features.dim() == 3 and features.size(-1) != features.size(1):  # noqa: PLR2004
             features = features.transpose(1, 2)
 
         # Generate waveform
-        if self.hifigan is not None and hasattr(self.hifigan, "decode_batch"):
-            # Use SpeechBrain's decode method
-            waveform = self.hifigan.decode_batch(features)
-            if isinstance(waveform, list):
-                waveform = torch.stack(waveform)
-        else:
-            # Use generator directly
-            waveform = self.generator(features)
-            if waveform.dim() == 3:
-                waveform = waveform.squeeze(1)  # Remove channel dimension
+        with torch.no_grad():
+            if hasattr(self.generator, "decode_batch"):
+                # SpeechBrain interface
+                waveform = self.generator.decode_batch(features)
+                if isinstance(waveform, list):
+                    waveform = waveform[0]  # Get first batch item if list
+            else:
+                # Use generator directly
+                waveform = self.generator(features)
+                if waveform.dim() == 3:  # noqa: PLR2004
+                    waveform = waveform.squeeze(1)  # Remove channel dimension
 
         return waveform
 
@@ -119,32 +133,50 @@ def create_hifigan_loss() -> dict[str, nn.Module]:
     """
 
     class MelSpectrogramLoss(nn.Module):
-        """Mel-spectrogram reconstruction loss"""
+        """
+        Mel-spectrogram reconstruction loss for training vocoders.
+        """
 
-        def __init__(self, sample_rate: int = 24000, n_fft: int = 1024, hop_length: int = 256, n_mels: int = 80):
-            super().__init__()
-            self.sample_rate = sample_rate
-            self.n_fft = n_fft
-            self.hop_length = hop_length
-            self.n_mels = n_mels
+        class MelTransform(nn.Module):
+            """Mel-spectrogram reconstruction loss"""
 
-        def forward(self, pred_audio: torch.Tensor, target_audio: torch.Tensor) -> torch.Tensor:
-            # Compute mel spectrograms
-            pred_mel = self._audio_to_mel(pred_audio)
-            target_mel = self._audio_to_mel(target_audio)
+            def __init__(
+                self, sample_rate: int = 24000, n_fft: int = 1024, hop_length: int = 256, n_mels: int = 80
+            ) -> None:
+                super().__init__()
+                self.sample_rate = sample_rate
+                self.n_fft = n_fft
+                self.hop_length = hop_length
+                self.n_mels = n_mels
 
-            # L1 loss on mel spectrograms
-            return nn.functional.l1_loss(pred_mel, target_mel)
+            def forward(self, pred_waveform: torch.Tensor, target_waveform: torch.Tensor) -> torch.Tensor:
+                """
+                Calculate mel-spectrogram loss between predicted and target waveforms.
 
-        def _audio_to_mel(self, audio: torch.Tensor) -> torch.Tensor:
-            # Convert audio to mel spectrogram
-            import torchaudio.transforms as T
+                Args:
+                    pred_waveform: Predicted waveform (B, T)
+                    target_waveform: Target waveform (B, T)
 
-            mel_transform = T.MelSpectrogram(
-                sample_rate=self.sample_rate, n_fft=self.n_fft, hop_length=self.hop_length, n_mels=self.n_mels
-            ).to(audio.device)
+                Returns:
+                    Mel-spectrogram L1 loss
+                """
+                pred_mel = self._audio_to_mel(pred_waveform)
+                target_mel = self._audio_to_mel(target_waveform)
 
-            return mel_transform(audio)
+                return torch.nn.functional.l1_loss(pred_mel, target_mel)
+
+            def _audio_to_mel(self, audio: torch.Tensor) -> torch.Tensor:
+                # Convert audio to mel spectrogram
+                from torchaudio import transforms
+
+                mel_transform = transforms.MelSpectrogram(
+                    sample_rate=self.sample_rate,
+                    n_fft=self.n_fft,
+                    hop_length=self.hop_length,
+                    n_mels=self.n_mels,
+                ).to(audio.device)
+
+                return mel_transform(audio)
 
     class FeatureMatchingLoss(nn.Module):
         """Feature matching loss"""
