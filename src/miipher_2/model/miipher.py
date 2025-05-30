@@ -1,99 +1,249 @@
+from typing import Optional, Tuple, List, Iterator
+
 import torch
 from torch import nn
-from torchaudio.models.conformer import ConformerLayer
+from torch.nn import functional as F
 
-from .modules import FiLMLayer, PositionalEncoding, Postnet
+from .modules import ParallelAdapter
+from .speechbrain_utils import SpeechBrainHiFiGAN
 
 
-class Miipher(nn.Module):
+class Miipher2(nn.Module):
+    """
+    Miipher-2: A Universal Speech Restoration Model
+
+    Key improvements over Miipher:
+    1. Uses frozen Universal Speech Model (USM) as feature extractor (rinna/hubert-large)
+    2. Uses Parallel Adapters instead of Conformer-based feature cleaner
+    3. Uses SpeechBrain HiFi-GAN vocoder for high-quality audio synthesis
+    4. No conditioning on text or speaker ID required
+    """
+
     def __init__(
         self,
-        n_phone_feature,
-        n_speaker_embedding,
-        n_ssl_feature,
-        n_hidden_dim,
-        n_conformer_blocks,
-        n_iters,
+        usm_model: nn.Module,
+        usm_layer_idx: int = 13,
+        pa_hidden_dim: int = 1024,
+        pa_input_output_dim: int = 1024,  # Updated for HuBERT hidden size
+        freeze_usm: bool = True,
+        hifigan_model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS",
+        device: str = "cpu",
     ) -> None:
         super().__init__()
-        self.phone_speaker_film = FiLMLayer(n_hidden_dim, n_hidden_dim)
-        self.phone_linear = nn.Linear(n_phone_feature, n_hidden_dim)
-        self.speaker_linear = nn.Linear(n_speaker_embedding, n_hidden_dim)
 
-        self.ssl_linear = nn.Linear(n_ssl_feature, n_hidden_dim)
+        # Frozen USM feature extractor (HuBERT)
+        self.usm_model = usm_model
+        self.usm_layer_idx = usm_layer_idx
 
-        self.positional_encoding = PositionalEncoding(n_hidden_dim)
-        self.positional_encoding_film = FiLMLayer(n_hidden_dim, n_hidden_dim)
-        self.conformer_blocks = nn.ModuleList()
-        for i in range(n_conformer_blocks):
-            self.conformer_blocks.append(FeatureCleanerBlock(n_hidden_dim, 8))
-        self.postnet = Postnet(
-            n_hidden_dim,
-            postnet_embedding_dim=512,
-            postnet_kernel_size=5,
-            postnet_n_convolutions=5,
-        )
-        self.n_iters = n_iters
-        self.n_conformer_blocks = n_conformer_blocks
+        if freeze_usm:
+            for param in self.usm_model.parameters():
+                param.requires_grad = False
 
-    def forward(self, phone_feature, speaker_feature, ssl_feature, ssl_feature_lengths=None):
+        # Get number of layers from HuBERT encoder
+        try:
+            # For HuBERT model structure
+            if hasattr(self.usm_model, 'encoder') and hasattr(self.usm_model.encoder, 'layers'):
+                num_layers = len(self.usm_model.encoder.layers)
+            else:
+                # Fallback to reasonable default
+                num_layers = 24  # Default for hubert-large
+        except Exception:
+            num_layers = 24
+
+        # Parallel adapters for feature cleaning
+        self.parallel_adapters = nn.ModuleList()
+
+        # Add parallel adapters to each layer
+        for layer_idx in range(num_layers):
+            adapter = ParallelAdapter(
+                input_dim=pa_input_output_dim, hidden_dim=pa_hidden_dim, output_dim=pa_input_output_dim
+            )
+            self.parallel_adapters.append(adapter)
+
+        # SpeechBrain HiFi-GAN vocoder
+        self.hifigan = SpeechBrainHiFiGAN(model_id=hifigan_model_id, device=device)
+
+    def get_pa_parameters(self) -> Iterator[nn.Parameter]:
+        """Get Parallel Adapter parameters for stage-specific training."""
+        for adapter in self.parallel_adapters:
+            yield from adapter.parameters()
+
+    def forward(
+        self, noisy_waveform: torch.Tensor, attention_mask: Optional[torch.Tensor] = None, use_vocoder: bool = True
+    ) -> torch.Tensor:
         """
+        Forward pass of Miipher-2
+
         Args:
-            phone_feature: (N, T, n_phone_feature)
-            speaker_feature: (N, n_speaker_embedding)
-            ssl_feature: (N, T, n_ssl_feature)
+            noisy_waveform: Input noisy waveform (B, T)
+            attention_mask: Optional attention mask for variable length sequences
+            use_vocoder: Whether to use vocoder for final synthesis
+
+        Returns:
+            clean_waveform: Restored clean waveform (B, T) if use_vocoder=True
+            clean_features: Predicted clean USM features (B, T', D) if use_vocoder=False
         """
-        N = phone_feature.size(0)
-        assert speaker_feature.size(0) == N
-        assert ssl_feature.size(0) == N
-        phone_feature = self.phone_linear(phone_feature)
-        speaker_feature = self.speaker_linear(speaker_feature)
-        ssl_feature = self.ssl_linear(ssl_feature)
-        intermediates = []
-        phone_speaker_feature = self.phone_speaker_film(phone_feature, speaker_feature.unsqueeze(1))
-        for iteration_count in range(self.n_iters):
-            pos_enc = self.positional_encoding(torch.tensor(iteration_count, device=self.device).unsqueeze(0).repeat(N))
-            assert pos_enc.size(0) == N
-            phone_speaker_feature = self.positional_encoding_film(phone_speaker_feature, pos_enc)
-            for i in range(self.n_conformer_blocks):
-                ssl_feature = self.conformer_blocks[i](ssl_feature.clone(), phone_speaker_feature, ssl_feature_lengths)
-            intermediates.append(ssl_feature.clone())
-            ssl_feature += self.postnet(ssl_feature.clone())
-            intermediates.append(ssl_feature.clone())
-        return ssl_feature, torch.stack(intermediates)
+        # Extract USM features with parallel adapters
+        clean_features = self.extract_clean_features(noisy_waveform, attention_mask)
+
+        if not use_vocoder:
+            return clean_features
+
+        # Synthesize clean waveform using SpeechBrain HiFi-GAN
+        clean_waveform = self.hifigan(clean_features)
+
+        return clean_waveform
+
+    def extract_clean_features(
+        self, noisy_waveform: torch.Tensor, attention_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Extract clean USM features using parallel adapters
+
+        Args:
+            noisy_waveform: Input noisy waveform (B, T)
+            attention_mask: Optional attention mask
+
+        Returns:
+            clean_features: Predicted clean USM features (B, T', D)
+        """
+        # Extract features from HuBERT with parallel adapters
+        clean_features = torch.empty(1)  # Initialize for return
+
+        context_manager = torch.no_grad() if not self.training else torch.enable_grad()
+        with context_manager:
+            # Get HuBERT hidden states at all layers
+            outputs = self.usm_model(noisy_waveform, output_hidden_states=True)
+            hidden_states_list = outputs.hidden_states
+
+            # Apply parallel adapters to each layer
+            adapted_states = []
+            for layer_idx, (hidden_state, adapter) in enumerate(zip(hidden_states_list, self.parallel_adapters)):
+                # Apply parallel adapter and add residual connection
+                adapter_output = adapter(hidden_state)
+                adapted_state = hidden_state + adapter_output
+                adapted_states.append(adapted_state)
+
+                # Use output from specified layer for vocoder
+                if layer_idx == self.usm_layer_idx - 1:  # 0-indexed
+                    clean_features = adapted_state
+
+        return clean_features
+
+    def inference(self, noisy_waveform: torch.Tensor, chunk_length: Optional[int] = None) -> torch.Tensor:
+        """
+        Efficient inference for long sequences with optional chunking
+
+        Args:
+            noisy_waveform: Input noisy waveform (B, T)
+            chunk_length: Optional chunk length for processing long sequences
+
+        Returns:
+            clean_waveform: Restored clean waveform (B, T)
+        """
+        self.eval()
+        with torch.no_grad():
+            if chunk_length is None:
+                clean_waveform = self.forward(noisy_waveform, use_vocoder=True)
+                return clean_waveform
+            # Process in chunks for memory efficiency
+            return self._chunked_inference(noisy_waveform, chunk_length)
+
+    def _chunked_inference(self, noisy_waveform: torch.Tensor, chunk_length: int) -> torch.Tensor:
+        """
+        Process long sequences in chunks
+
+        Args:
+            noisy_waveform: Input noisy waveform (B, T)
+            chunk_length: Length of each chunk
+
+        Returns:
+            clean_waveform: Restored clean waveform (B, T)
+        """
+        B, T = noisy_waveform.shape
+        clean_chunks = []
+
+        for start_idx in range(0, T, chunk_length):
+            end_idx = min(start_idx + chunk_length, T)
+            chunk = noisy_waveform[:, start_idx:end_idx]
+
+            clean_chunk = self.forward(chunk, use_vocoder=True)
+            clean_chunks.append(clean_chunk)
+
+        return torch.cat(clean_chunks, dim=1)
 
     @property
-    def device(self):
+    def device(self) -> torch.device:
         return next(iter(self.parameters())).device
 
 
-class FeatureCleanerBlock(nn.Module):
-    def __init__(self, hidden_dim, num_heads) -> None:
+class Miipher2Loss(nn.Module):
+    """
+    Loss function for Miipher-2 training
+
+    Combines L1, L2, and spectral convergence losses for feature prediction
+    """
+
+    def __init__(self, l1_weight: float = 1.0, l2_weight: float = 1.0, sc_weight: float = 1.0):
         super().__init__()
+        self.l1_weight = l1_weight
+        self.l2_weight = l2_weight
+        self.sc_weight = sc_weight
 
-        self.cross_attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
-        self.conformer_block = ConformerLayer(hidden_dim, hidden_dim * 4, num_heads, 31)
-        self.layer_norm = nn.LayerNorm(1024)
+    def forward(
+        self,
+        predicted_features: torch.Tensor,
+        target_features: torch.Tensor,
+        feature_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Compute combined loss for feature prediction
 
-    def forward(self, cleaning_feature, speaker_phone_feature, cleaning_feature_lengths=None):
-        if cleaning_feature_lengths is not None:
-            mask = _lengths_to_padding_mask(cleaning_feature_lengths).T
-        else:
-            mask = None
-        cleaning_feature += self.cross_attention(
-            cleaning_feature.clone(),
-            speaker_phone_feature,
-            speaker_phone_feature,
-        )[0]
-        cleaning_feature = self.layer_norm(cleaning_feature.clone())
-        cleaning_feature += self.conformer_block(cleaning_feature.clone(), key_padding_mask=mask)
-        return cleaning_feature
+        Args:
+            predicted_features: Predicted clean features (B, T, D)
+            target_features: Target clean features (B, T, D)
+            feature_mask: Optional mask for variable length sequences
 
+        Returns:
+            total_loss: Combined loss value
+        """
+        if feature_mask is not None:
+            # Apply mask to ignore padded regions
+            predicted_features = predicted_features * feature_mask.unsqueeze(-1)
+            target_features = target_features * feature_mask.unsqueeze(-1)
 
-def _lengths_to_padding_mask(lengths: torch.Tensor) -> torch.Tensor:
-    batch_size = lengths.shape[0]
-    max_length = int(torch.max(lengths).item())
-    padding_mask = torch.arange(max_length, device=lengths.device, dtype=lengths.dtype).expand(
-        batch_size, max_length
-    ) >= lengths.unsqueeze(1)
-    return padding_mask
+        # L1 loss
+        l1_loss = F.l1_loss(predicted_features, target_features)
+
+        # L2 loss
+        l2_loss = F.mse_loss(predicted_features, target_features)
+
+        # Spectral convergence loss
+        sc_loss = self._spectral_convergence_loss(predicted_features, target_features)
+
+        total_loss = self.l1_weight * l1_loss + self.l2_weight * l2_loss + self.sc_weight * sc_loss
+
+        return total_loss
+
+    def _spectral_convergence_loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Compute spectral convergence loss
+
+        Args:
+            predicted: Predicted features (B, T, D)
+            target: Target features (B, T, D)
+
+        Returns:
+            sc_loss: Spectral convergence loss
+        """
+        # Compute FFT
+        pred_fft = torch.fft.fft(predicted, dim=1)
+        target_fft = torch.fft.fft(target, dim=1)
+
+        # Compute spectral convergence
+        numerator = torch.norm(pred_fft - target_fft, p="fro")
+        denominator = torch.norm(target_fft, p="fro")
+
+        sc_loss = numerator / (denominator + 1e-8)
+
+        return sc_loss

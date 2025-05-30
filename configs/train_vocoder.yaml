@@ -1,0 +1,50 @@
+# Miipher-2 Vocoder Fine-tuning Configuration
+
+seed: 172957
+debug: false
+
+# Data configuration
+data:
+  clean_dir: /path/to/clean/audio
+  noisy_dir: /path/to/noisy/audio
+  val_clean_dir: /path/to/val/clean/audio
+  val_noisy_dir: /path/to/val/noisy/audio
+  sample_rate: 16000
+  segment_length: 4.0  # seconds
+  snr_range: [5, 30]   # SNR range for noisy audio
+  noise_types: ["white", "pink", "brown"]
+
+# Training configuration
+training:
+  device: "cuda"
+  batch_size: 8         # Smaller batch size for vocoder training
+  learning_rate: 5e-5   # Lower learning rate for fine-tuning
+  num_workers: 4
+
+  # Logging and saving intervals
+  log_interval: 100      # steps
+  save_interval: 5000    # steps
+  val_interval: 1000     # steps
+
+# Vocoder specific parameters
+vocoder:
+  freeze_pa: false        # Whether to freeze PA during vocoder training
+
+# Loss configuration
+loss:
+  mel_weight: 1.0         # Mel-spectrogram loss weight
+  feature_weight: 0.5     # Feature matching loss weight
+  l1_weight: 0.1          # L1 waveform loss weight
+
+# PA checkpoint (required for vocoder training)
+pa_checkpoint: /path/to/pa_final.pt
+
+# Resume checkpoint (optional)
+resume_checkpoint: null
+
+# Hydra configuration
+hydra:
+  run:
+    dir: ./outputs/vocoder_training/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true

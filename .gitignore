@@ -15,3 +15,5 @@ wavefit-pytorch/
 tmp/
 download/
 datasets/
+
+paper/

@@ -14,9 +14,11 @@ dependencies = [
     "pillow>=11.2.1",
     "pyroomacoustics>=0.8.4",
     "soundfile>=0.13.1",
+    "speechbrain>=1.0.0",
     "torch>=2.7.0",
     "torchaudio>=2.7.0",
     "tqdm>=4.67.1",
+    "transformers>=4.40.0",
     "wandb>=0.19.11",
     "webdataset>=0.2.111",
 ]

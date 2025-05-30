@@ -1,0 +1,48 @@
+# Miipher-2 Parallel Adapters Training Configuration
+
+seed: 172957
+debug: false
+
+# Data configuration
+data:
+  clean_dir: /path/to/clean/audio
+  noisy_dir: /path/to/noisy/audio
+  val_clean_dir: /path/to/val/clean/audio
+  val_noisy_dir: /path/to/val/noisy/audio
+  sample_rate: 16000
+  segment_length: 4.0  # seconds
+  snr_range: [5, 30]   # SNR range for noisy audio
+  noise_types: ["white", "pink", "brown"]
+
+# Training configuration
+training:
+  device: "cuda"
+  batch_size: 16
+  learning_rate: 1e-4
+  num_workers: 4
+
+  # Logging and saving intervals
+  log_interval: 100      # steps
+  save_interval: 5000    # steps
+  val_interval: 1000     # steps
+
+# PA specific parameters
+pa:
+  adapter_dim: 128
+  adapter_dropout: 0.1
+
+# Loss configuration
+loss:
+  l1_weight: 1.0
+  l2_weight: 1.0
+  spectral_weight: 1.0
+
+# Resume checkpoint (optional)
+resume_checkpoint: null
+
+# Hydra configuration
+hydra:
+  run:
+    dir: ./outputs/pa_training/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: true
