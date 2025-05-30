@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 
 class JVSCorpus(Dataset):
-    def __init__(self, root: str, exclude_speakers: tuple=()) -> None:
+    def __init__(self, root: str, exclude_speakers: tuple = ()) -> None:
         super().__init__()
         self.root = Path(root)
         self.speakers = [f.stem for f in self.root.glob("jvs*") if f.is_dir() and f.stem not in exclude_speakers]
