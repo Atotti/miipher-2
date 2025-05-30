@@ -37,8 +37,10 @@ class Miipher2(nn.Module):
         reduction_factor: int = 8,
         use_vocoder: bool = False,  # noqa: FBT001, FBT002
         mel_dim: int = 80,
+        device: str = "cuda"
     ) -> None:
         super().__init__()
+        self.device = device
 
         # 1  Load & freeze HuBERT
         backbone: HubertModel = HubertModel.from_pretrained(usm_model_name).to(self.device)
@@ -118,17 +120,3 @@ class Miipher2(nn.Module):
     @property
     def num_trainable(self) -> int:
         return sum(p.numel() for p in self.trainable_parameters())
-
-
-# ---------------------------------------------------------------------------
-# 4.  Quick sanity check (run as `python miipher2.py`)
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    model = Miipher2(use_vocoder=False, device="cpu")
-    print("Trainable parameters :", model.num_trainable / 1e6, "M")
-
-    # dummy forward
-    dummy_wav = torch.randn(1, 16000)  # 1-s @ 16kHz (HuBERT expects 16k)
-    with torch.no_grad():
-        out = model(dummy_wav)
-    print("Output shape:", out.shape)  # (B, T', D)
