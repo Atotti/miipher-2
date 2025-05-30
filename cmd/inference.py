@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""
-Miipher-2 Inference Command
-
-Usage:
-    python -m cmd.inference
-    python -m cmd.inference input_audio=/path/to/noisy.wav output_audio=/path/to/clean.wav
-"""
-
-import sys
 from pathlib import Path
 
 import hydra
@@ -15,14 +5,11 @@ import torch
 import torchaudio
 from omegaconf import DictConfig
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from miipher import Miipher2
-from speechbrain_utils import load_speechbrain_vocoder
+from miipher_2.model import Miipher2
+from miipher_2.model.speechbrain_utils import load_speechbrain_vocoder
 
 
-@hydra.main(version_base=None, config_path="../configs/", config_name="inference")
+@hydra.main(version_base=None, config_path="../configs/", config_name="inference")  # type: ignore
 def main(cfg: DictConfig) -> None:
     """Main function for inference."""
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Miipher-2 Parallel Adapters Training Command
 
@@ -12,7 +11,6 @@ Usage:
     python cmd/train_pa.py hydra.run.dir=outputs/pa_training
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -22,15 +20,10 @@ from lightning.pytorch import seed_everything
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-# Add src directory to path for imports
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root / "src"))
-
-from miipher_2.data import AudioDataset  # If exists
 from miipher_2.model import Miipher2, Miipher2Trainer, SpeechBrainHiFiGAN, load_usm_model
 
 
-@hydra.main(version_base=None, config_path="../configs/", config_name="train_pa")
+@hydra.main(version_base=None, config_path="../configs/", config_name="train_pa")  # type: ignore
 def main(cfg: DictConfig) -> None:
     """
     Main function for PA training following paper methodology.

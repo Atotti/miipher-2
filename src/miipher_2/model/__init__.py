@@ -19,17 +19,12 @@ from .trainer import Miipher2Trainer, create_trainer
 from .usm_utils import load_usm_model
 
 __all__ = [
-    # Main model
     "Miipher2",
     "Miipher2Loss",
-    # Training
     "Miipher2Trainer",
-    "create_trainer",
-    # USM utilities
-    "load_usm_model",
-    # SpeechBrain utilities
+    "ParallelAdapter",
     "SpeechBrainHiFiGAN",
     "create_hifigan_loss",
-    # Core modules
-    "ParallelAdapter",
+    "create_trainer",
+    "load_usm_model",
 ]

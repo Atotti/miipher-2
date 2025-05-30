@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Miipher-2 Vocoder Fine-tuning Command
 
@@ -7,8 +6,6 @@ Usage:
     python -m cmd.train_vocoder hydra.run.dir=outputs/vocoder_training
 """
 
-import sys
-from pathlib import Path
 
 import hydra
 import torch
@@ -16,16 +13,12 @@ from lightning.pytorch import seed_everything
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent))
-
-from example_finetune import AudioDataset
-from miipher import Miipher2
-from speechbrain_utils import load_speechbrain_vocoder
-from trainer import Miipher2Trainer
+from miipher_2.model import Miipher2
+from miipher_2.model.speechbrain_utils import load_speechbrain_vocoder
+from miipher_2.model.trainer import Miipher2Trainer
 
 
-@hydra.main(version_base=None, config_path="../configs/", config_name="train_vocoder")
+@hydra.main(version_base=None, config_path="../configs/", config_name="train_vocoder") # type: ignore
 def main(cfg: DictConfig) -> None:
     """Main function for vocoder fine-tuning."""
 
