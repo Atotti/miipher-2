@@ -6,7 +6,6 @@ Usage:
     python -m cmd.train_vocoder hydra.run.dir=outputs/vocoder_training
 """
 
-
 import hydra
 import torch
 from lightning.pytorch import seed_everything
@@ -18,7 +17,7 @@ from miipher_2.model.speechbrain_utils import load_speechbrain_vocoder
 from miipher_2.model.trainer import Miipher2Trainer
 
 
-@hydra.main(version_base=None, config_path="../configs/", config_name="train_vocoder") # type: ignore
+@hydra.main(version_base=None, config_path="../configs/", config_name="train_vocoder")  # type: ignore
 def main(cfg: DictConfig) -> None:
     """Main function for vocoder fine-tuning."""
 

@@ -1,245 +1,136 @@
-from collections.abc import Iterator
-from typing import List, Optional, Tuple
+from collections.abc import Iterable
+from typing import Callable
 
 import torch
+from peft import inject_adapter_in_model
 from torch import nn
-from torch.nn import functional as F
+from transformers import HubertModel
 
-from .modules import ParallelAdapter
-from .speechbrain_utils import SpeechBrainHiFiGAN
+from miipher_2.model import ParallelAdapter, ParallelAdapterConfig, SpeechBrainHiFiGAN
 
 
+# ---------------------------------------------------------------------------
+# Miipher-2 main model (frozen HuBERT + Parallel Adapters + HiFi-GAN)
+# ---------------------------------------------------------------------------
 class Miipher2(nn.Module):
-    """
-    Miipher-2: A Universal Speech Restoration Model
+    """Miipher-2 - Universal Speech Restoration model.
 
-    Key improvements over Miipher:
-    1. Uses frozen Universal Speech Model (USM) as feature extractor (rinna/hubert-large)
-    2. Uses Parallel Adapters instead of Conformer-based feature cleaner
-    3. Uses SpeechBrain HiFi-GAN vocoder for high-quality audio synthesis
-    4. No conditioning on text or speaker ID required
+    Parameters
+    ----------
+    usm_model_name : str
+        HF hub ID of the frozen feature extractor (HuBERT large by default).
+    target_layer : int
+        0-indexed encoder layer whose hidden state will be cleaned / projected.
+    reduction_factor : int
+        Bottleneck ratio r (hidden // r).
+    use_vocoder : bool
+        Whether to include the SpeechBrain HiFi-GAN into the graph.
+    mel_dim : int
+        Dimensionality of the (log-)Mel projection given to HiFi-GAN.
+    device : str | torch.device
+        Device to place models / adapters.
     """
 
     def __init__(
         self,
-        usm_model: nn.Module,
-        usm_layer_idx: int = 13,
-        pa_hidden_dim: int = 1024,
-        pa_input_output_dim: int = 1024,  # Updated for HuBERT hidden size
-        freeze_usm: bool = True,
-        hifigan_model_id: str = "speechbrain/hifigan-hubert-k1000-LibriTTS",
-        device: str = "cpu",
+        usm_model_name: str = "rinna/japanese-hubert-large",
+        target_layer: int = 12,  # → layer-13 in paper (0-indexed)
+        reduction_factor: int = 8,
+        use_vocoder: bool = False,  # noqa: FBT001, FBT002
+        mel_dim: int = 80,
     ) -> None:
         super().__init__()
 
-        # Frozen USM feature extractor (HuBERT)
-        self.usm_model = usm_model
-        self.usm_layer_idx = usm_layer_idx
+        # 1  Load & freeze HuBERT
+        backbone: HubertModel = HubertModel.from_pretrained(usm_model_name).to(self.device)
+        backbone.eval()
+        for p in backbone.parameters():
+            p.requires_grad_(False)  # noqa: FBT003
+        self.backbone = backbone
+        self.hidden_size: int = backbone.config.hidden_size  # 1024
+        self.target_layer: int = target_layer
 
-        if freeze_usm:
-            for param in self.usm_model.parameters():
-                param.requires_grad = False
+        # 2  Build Parallel Adapter config
+        pa_cfg = ParallelAdapterConfig(reduction_factor=reduction_factor)
 
-        # Get number of layers from HuBERT encoder
-        try:
-            # For HuBERT model structure
-            if hasattr(self.usm_model, "encoder") and hasattr(self.usm_model.encoder, "layers"):
-                num_layers = len(self.usm_model.encoder.layers)
-            else:
-                # Fallback to reasonable default
-                num_layers = 24  # Default for hubert-large
-        except Exception:
-            num_layers = 24
+        # 3  Inject adapters into every FFN
+        self._adapter_params: list[nn.Parameter] = []
+        for _idx, layer in enumerate(backbone.encoder.layers):
+            pa = self._attach_parallel_adapter(layer, pa_cfg)
+            self._adapter_params.extend(pa.parameters())
+        # register with PEFT (enables save_pretrained / from_pretrained)
+        inject_adapter_in_model(pa_cfg, backbone, adapter_name="miipher2_pa")
 
-        # Parallel adapters for feature cleaning
-        self.parallel_adapters = nn.ModuleList()
+        # 4  Projection to Mel space (1*1 conv == Linear)
+        self.proj = nn.Linear(self.hidden_size, mel_dim, bias=False)
 
-        # Add parallel adapters to each layer
-        for _layer_idx in range(num_layers):
-            adapter = ParallelAdapter(
-                input_dim=pa_input_output_dim, hidden_dim=pa_hidden_dim, output_dim=pa_input_output_dim
-            )
-            self.parallel_adapters.append(adapter)
+        # 5  HiFi-GAN vocoder
+        self.use_vocoder = use_vocoder
+        self.hifigan = SpeechBrainHiFiGAN(model_id="speechbrain/hifigan-hubert-k1000-LibriTTS", device=self.device)
 
-        # SpeechBrain HiFi-GAN vocoder
-        self.hifigan = SpeechBrainHiFiGAN(model_id=hifigan_model_id, device=device)
 
-    def get_pa_parameters(self) -> Iterator[nn.Parameter]:
-        """Get Parallel Adapter parameters for stage-specific training."""
-        for adapter in self.parallel_adapters:
-            yield from adapter.parameters()
+    # ---------------------------------------------------------------------
+    #  Helper - attach PA to one Transformer layer
+    def _attach_parallel_adapter(self, layer: nn.Module, pa_cfg: ParallelAdapterConfig) -> ParallelAdapter:
+        pa = ParallelAdapter(self.hidden_size, pa_cfg).to(self.device)
 
-    def forward(
-        self, noisy_waveform: torch.Tensor, attention_mask: torch.Tensor | None = None, use_vocoder: bool = True
-    ) -> torch.Tensor:
-        """
-        Forward pass of Miipher-2
+        original_ffn = layer.feed_forward  # save reference
 
-        Args:
-            noisy_waveform: Input noisy waveform (B, T)
-            attention_mask: Optional attention mask for variable length sequences
-            use_vocoder: Whether to use vocoder for final synthesis
+        def _ffn_plus_adapter(
+            x: torch.Tensor,
+            *,
+            orig: Callable[[torch.Tensor], torch.Tensor] = original_ffn,
+            pa_mod: ParallelAdapter = pa,
+        ) -> torch.Tensor:
+            return orig(x) + pa_mod(x)
 
-        Returns:
-            clean_waveform: Restored clean waveform (B, T) if use_vocoder=True
-            clean_features: Predicted clean USM features (B, T', D) if use_vocoder=False
-        """
-        # Extract USM features with parallel adapters
-        clean_features = self.extract_clean_features(noisy_waveform, attention_mask)
+        layer.feed_forward = _ffn_plus_adapter  # dynamic patch
+        return pa
 
-        if not use_vocoder:
-            return clean_features
+    # ------------------------------------------------------------------
+    #  Public helpers - retrieve trainable params only, etc.
+    # ------------------------------------------------------------------
+    def trainable_parameters(self) -> Iterable[nn.Parameter]:
+        """Return an iterator over PA (+ projection + vocoder) parameters."""
+        yield from self._adapter_params
+        yield from self.proj.parameters()
+        if self.use_vocoder and self.hifigan is not None:
+            yield from self.hifigan.parameters()
 
-        # Synthesize clean waveform using SpeechBrain HiFi-GAN
-        return self.hifigan(clean_features)
+    # ------------------------------------------------------------------
+    #  Forward / inference
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def extract_features(self, wav: torch.Tensor) -> torch.Tensor:  # (B, T)
+        """Return clean latent features at *target_layer* after PA correction."""
+        return self.backbone(wav, output_hidden_states=True).hidden_states[self.target_layer]
 
-    def extract_clean_features(
-        self, noisy_waveform: torch.Tensor, attention_mask: torch.Tensor | None = None
-    ) -> torch.Tensor:
-        """
-        Extract clean USM features using parallel adapters
+    def forward(self, wav: torch.Tensor) -> torch.Tensor:
+        """wav -> (clean) wav or latent depending on `use_vocoder`."""
+        wav = wav.to(self.device)
+        feats = self.extract_features(wav)  # (B, T', D)
 
-        Args:
-            noisy_waveform: Input noisy waveform (B, T)
-            attention_mask: Optional attention mask
+        if not self.use_vocoder:
+            return feats  # type: ignore[return-value]
 
-        Returns:
-            clean_features: Predicted clean USM features (B, T', D)
-        """
-        # Extract features from HuBERT with parallel adapters
-        clean_features = torch.empty(1)  # Initialize for return
+        mel = self.proj(feats)  # (B, T', mel_dim)
+        return self.hifigan(mel)  # (B, T)
 
-        context_manager = torch.no_grad() if not self.training else torch.enable_grad()
-        with context_manager:
-            # Get HuBERT hidden states at all layers
-            outputs = self.usm_model(noisy_waveform, output_hidden_states=True)
-            hidden_states_list = outputs.hidden_states
-
-            # Apply parallel adapters to each layer
-            adapted_states = []
-            for layer_idx, (hidden_state, adapter) in enumerate(
-                zip(hidden_states_list, self.parallel_adapters, strict=False)
-            ):
-                # Apply parallel adapter and add residual connection
-                adapter_output = adapter(hidden_state)
-                adapted_state = hidden_state + adapter_output
-                adapted_states.append(adapted_state)
-
-                # Use output from specified layer for vocoder
-                if layer_idx == self.usm_layer_idx - 1:  # 0-indexed
-                    clean_features = adapted_state
-
-        return clean_features
-
-    def inference(self, noisy_waveform: torch.Tensor, chunk_length: int | None = None) -> torch.Tensor:
-        """
-        Efficient inference for long sequences with optional chunking
-
-        Args:
-            noisy_waveform: Input noisy waveform (B, T)
-            chunk_length: Optional chunk length for processing long sequences
-
-        Returns:
-            clean_waveform: Restored clean waveform (B, T)
-        """
-        self.eval()
-        with torch.no_grad():
-            if chunk_length is None:
-                return self.forward(noisy_waveform, use_vocoder=True)
-            # Process in chunks for memory efficiency
-            return self._chunked_inference(noisy_waveform, chunk_length)
-
-    def _chunked_inference(self, noisy_waveform: torch.Tensor, chunk_length: int) -> torch.Tensor:
-        """
-        Process long sequences in chunks
-
-        Args:
-            noisy_waveform: Input noisy waveform (B, T)
-            chunk_length: Length of each chunk
-
-        Returns:
-            clean_waveform: Restored clean waveform (B, T)
-        """
-        B, T = noisy_waveform.shape
-        clean_chunks = []
-
-        for start_idx in range(0, T, chunk_length):
-            end_idx = min(start_idx + chunk_length, T)
-            chunk = noisy_waveform[:, start_idx:end_idx]
-
-            clean_chunk = self.forward(chunk, use_vocoder=True)
-            clean_chunks.append(clean_chunk)
-
-        return torch.cat(clean_chunks, dim=1)
-
+    # convenience property ------------------------------------------------
     @property
-    def device(self) -> torch.device:
-        return next(iter(self.parameters())).device
+    def num_trainable(self) -> int:
+        return sum(p.numel() for p in self.trainable_parameters())
 
 
-class Miipher2Loss(nn.Module):
-    """
-    Loss function for Miipher-2 training
+# ---------------------------------------------------------------------------
+# 4.  Quick sanity check (run as `python miipher2.py`)
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    model = Miipher2(use_vocoder=False, device="cpu")
+    print("Trainable parameters :", model.num_trainable / 1e6, "M")
 
-    Combines L1, L2, and spectral convergence losses for feature prediction
-    """
-
-    def __init__(self, l1_weight: float = 1.0, l2_weight: float = 1.0, sc_weight: float = 1.0) -> None:
-        super().__init__()
-        self.l1_weight = l1_weight
-        self.l2_weight = l2_weight
-        self.sc_weight = sc_weight
-
-    def forward(
-        self,
-        predicted_features: torch.Tensor,
-        target_features: torch.Tensor,
-        feature_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """
-        Compute combined loss for feature prediction
-
-        Args:
-            predicted_features: Predicted clean features (B, T, D)
-            target_features: Target clean features (B, T, D)
-            feature_mask: Optional mask for variable length sequences
-
-        Returns:
-            total_loss: Combined loss value
-        """
-        if feature_mask is not None:
-            # Apply mask to ignore padded regions
-            predicted_features = predicted_features * feature_mask.unsqueeze(-1)
-            target_features = target_features * feature_mask.unsqueeze(-1)
-
-        # L1 loss
-        l1_loss = F.l1_loss(predicted_features, target_features)
-
-        # L2 loss
-        l2_loss = F.mse_loss(predicted_features, target_features)
-
-        # Spectral convergence loss
-        sc_loss = self._spectral_convergence_loss(predicted_features, target_features)
-
-        return self.l1_weight * l1_loss + self.l2_weight * l2_loss + self.sc_weight * sc_loss
-
-    def _spectral_convergence_loss(self, predicted: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        """
-        Compute spectral convergence loss
-
-        Args:
-            predicted: Predicted features (B, T, D)
-            target: Target features (B, T, D)
-
-        Returns:
-            sc_loss: Spectral convergence loss
-        """
-        # Compute FFT
-        pred_fft = torch.fft.fft(predicted, dim=1)
-        target_fft = torch.fft.fft(target, dim=1)
-
-        # Compute spectral convergence
-        numerator = torch.norm(pred_fft - target_fft, p="fro")
-        denominator = torch.norm(target_fft, p="fro")
-
-        return numerator / (denominator + 1e-8)
+    # dummy forward
+    dummy_wav = torch.randn(1, 16000)  # 1-s @ 16kHz (HuBERT expects 16k)
+    with torch.no_grad():
+        out = model(dummy_wav)
+    print("Output shape:", out.shape)  # (B, T', D)
