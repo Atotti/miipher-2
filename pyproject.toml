@@ -20,6 +20,7 @@ dependencies = [
     "torchaudio>=2.7.0",
     "tqdm>=4.67.1",
     "transformers>=4.40.0",
+    "trl[peft]>=0.18.1",
     "wandb>=0.19.11",
     "webdataset>=0.2.111",
 ]

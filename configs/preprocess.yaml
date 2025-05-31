@@ -67,4 +67,4 @@ preprocess:
     pattern: /home/ayu/datasets/jvs/jvs-val-%06d.tar.gz
   val_size: 600
   n_repeats: 4
-sample_rate: 24000
+sample_rate: 16000
