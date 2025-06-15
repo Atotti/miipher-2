@@ -1,0 +1,11 @@
+stage: finetune
+dataset:
+  list: data/train.lst          # wav list
+adapter_ckpt: exp/adapter/adapter_final.pt
+pretrained: assets/hifigan_pretrained.pt
+steps: 400000
+lr: 0.0002
+save_dir: exp/hifigan_ft
+lambda_stft: 1.0
+lambda_mpd: 2.5
+lambda_msd: 2.5

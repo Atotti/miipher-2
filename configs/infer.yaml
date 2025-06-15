@@ -1,0 +1,4 @@
+adapter: exp/adapter/adapter_final.pt
+vocoder: exp/hifigan_ft/g_400k.pth
+in: noisy.wav
+out: restored.wav

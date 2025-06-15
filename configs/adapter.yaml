@@ -1,0 +1,8 @@
+dataset:
+  list: data/train.lst
+epochs: 5
+batch_sec: 6
+optim:
+  lr: 0.0002
+  weight_decay: 0.01
+save_dir: exp/adapter

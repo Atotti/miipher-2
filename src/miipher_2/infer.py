@@ -1,0 +1,42 @@
+# ------------------------------------------------------------
+#  miipher/infer.py
+# ------------------------------------------------------------
+"""
+単発 WAV 推論 CLI
+"""
+
+import argparse
+import pathlib
+
+import torch
+
+from miipher_2.model.feature_cleaner import FeatureCleaner
+from miipher_2.utils.audio import load, save
+from miipher_2.vocoder.hifigan.generator import Generator
+
+
+def parse():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--adapter", type=pathlib.Path, required=True)
+    ap.add_argument("--vocoder", type=pathlib.Path, required=True)
+    ap.add_argument("--in", dest="wav_in", type=pathlib.Path, required=True)
+    ap.add_argument("--out", dest="wav_out", type=pathlib.Path, required=True)
+    return ap.parse_args()
+
+
+def main() -> None:
+    a = parse()
+    cleaner = FeatureCleaner().cuda().eval()
+    cleaner.load_state_dict(torch.load(a.adapter, map_location="cpu"))
+    gen = Generator().cuda().eval()
+    gen.load_state_dict(torch.load(a.vocoder, map_location="cpu")["gen"])
+    wav = load(a.wav_in).cuda()
+    with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        feat = cleaner(wav)
+        restored = gen(feat)
+    a.wav_out.parent.mkdir(parents=True, exist_ok=True)
+    save(a.wav_out, restored.cpu())
+
+
+if __name__ == "__main__":
+    main()
