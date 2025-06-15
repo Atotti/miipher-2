@@ -9,37 +9,46 @@ from miipher_2.data.webdataset_loader import WavPairDataset
 from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
-def train_adapter(cfg: DictConfig) -> None:  # hydra から直接呼ぶ
-    # -------- dataset (WebDataset, already degraded) ----------
-    ds = WavPairDataset(
-        pattern=cfg.dataset.path_pattern,
-        shuffle=cfg.dataset.shuffle,
+def train_adapter(cfg: DictConfig) -> None:
+    # ---------------- Data ----------------
+    dl = DataLoader(
+        WavPairDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
+        batch_size=cfg.batch_size,
+        num_workers=cfg.loader.num_workers,
+        pin_memory=cfg.loader.pin_memory,
     )
-    dl = DataLoader(ds, batch_size=cfg.batch_size, num_workers=8, pin_memory=True)
 
-    # -------- model ----------
+    # ---------------- Model ----------------
     model = FeatureCleaner().cuda()
-    opt = optim.AdamW(model.parameters(), lr=cfg.optim.lr, weight_decay=cfg.optim.weight_decay)
+    opt = optim.AdamW(
+        model.parameters(),
+        lr=cfg.optim.lr,
+        weight_decay=cfg.optim.weight_decay,
+        betas=tuple(cfg.optim.betas),
+    )
     scaler = torch.cuda.amp.GradScaler()
     l1 = nn.L1Loss()
 
-    # -------- train ----------
+    # ---------------- Train loop ----------------
+    it = 0
     for ep in range(cfg.epochs):
         for noisy, clean in dl:
             noisy, clean = noisy.cuda(), clean.cuda()
             with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-                pred = model(noisy)  # (B,768,T)
-                target = model.extractor(clean)  # Clean feature
+                pred = model(noisy)
+                target = model.extractor(clean)
                 loss = l1(pred, target) + (pred - target).square().mean()
 
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
-            opt.zero_grad()
+            opt.zero_grad(set_to_none=True)
 
-        print(f"[Adapter] epoch {ep + 1}/{cfg.epochs}  L={loss.item():.4f}")
+            if it % cfg.log_interval == 0:
+                print(f"[Adapter] ep{ep + 1} it{it:>6}  L={loss.item():.4f}")
+            it += 1
 
-    # -------- save ----------
+    # ---------------- Save ----------------
     sd = pathlib.Path(cfg.save_dir)
     sd.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), sd / "adapter_final.pt")

@@ -1,9 +1,17 @@
 dataset:
   path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
-  shuffle: 1000          # wds shuffle size
-batch_size: 8            # Adapter 用
+  shuffle: 1000          # WebDataset 内部 shuffle バッファ
+batch_size: 8            # GPU1枚あたり
 epochs: 5
+
 optim:
   lr: 2.0e-4
   weight_decay: 0.01
+  betas: [0.9, 0.95]     # ← 追加：AdamW β
+
+loader:
+  num_workers: 8
+  pin_memory: true
+
 save_dir: exp/adapter
+log_interval: 100        # iter ごとに損失表示

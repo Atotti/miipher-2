@@ -1,14 +1,26 @@
 dataset:
   path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
+  shuffle: 1000
 batch_size: 4
+loader:
+  num_workers: 8
+  pin_memory: true
+
 adapter_ckpt: exp/adapter/adapter_final.pt
-pretrained_gen: assets/hifigan_universal_v1.pt
-upsample_rates: [3, 3, 7, 7] # 16 kHz→22.05 kHz (= ×1.378) を近似
+pretrained_gen: assets/hifigan_universal_v1.pt   # 事前学習済み G
+
+# ----- Generator アーキテクチャ -----
+upsample_rates:        [3, 3, 7, 7]   # 16 kHz→22.05 kHz ≒ ×1.378
 upsample_kernel_sizes: [9, 9, 14, 14]
-target_sr: 22050                   # 出力 SR
-save_dir: exp/hifigan_ft           # チェックポイント出力先
-steps: 400000
+
+# ----- 学習ハイパーパラメータ -----
+steps: 400_000
 lr: 2.0e-4
+betas: [0.9, 0.95]
 lambda_stft: 1.0
 lambda_mpd: 2.5
 lambda_msd: 2.5
+
+save_dir: exp/hifigan_ft
+log_interval: 1_000     # iter ごとにログ
+checkpoint_interval: 50_000

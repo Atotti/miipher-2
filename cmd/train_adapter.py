@@ -4,8 +4,8 @@ from omegaconf import DictConfig
 from miipher_2.train.adapter import train_adapter
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="adapter")  # pyproject の layout に応じて調整
-def main(cfg: DictConfig) -> None:
+@hydra.main(version_base=None, config_path="../configs", config_name="adapter")
+def main(cfg: DictConfig) -> None:  # pylint:disable=no-value-for-parameter
     train_adapter(cfg)
 
 
