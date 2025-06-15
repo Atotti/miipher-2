@@ -14,8 +14,8 @@ def load(path):
     return wav.mean(0, keepdim=True)  # mono
 
 
-def save(path, wav) -> None:
-    torchaudio.save(path, wav, SR)
+def save(path, wav, sr: int) -> None:
+    torchaudio.save(path, wav, sr)
 
 
 # --- 劣化関数 -----------------------------------------------

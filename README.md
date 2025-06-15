@@ -25,7 +25,7 @@ exp/               checkpoints 出力先
 ```bash
 uv run cmd/preprocess.py --config-name preprocess
 ```
-JVSコーパス形式ダウンロードした構造から直接処理可能。出力は **webdataset** 形式で保存される。
+JVSコーパス形式ダウンロードした構造から直接処理可能。出力はwebdataset形式で保存される。
 
 ## 2️⃣ モデル学習
 

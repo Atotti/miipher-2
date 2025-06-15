@@ -23,12 +23,13 @@ def main() -> None:
     cleaner.load_state_dict(torch.load(a.adapter, map_location="cpu"))
     gen = Generator().cuda().eval()
     gen.load_state_dict(torch.load(a.vocoder, map_location="cpu")["gen"])
-    wav = load(a.wav_in).cuda()
+    wav = load(a.wav_in).cuda()  # 入力は16kHzにリサンプル
     with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
         feat = cleaner(wav)
-        restored = gen(feat)
+        restored = gen(feat)  # 出力は22.05kHz
     a.wav_out.parent.mkdir(parents=True, exist_ok=True)
-    save(a.wav_out, restored.cpu())
+    # 保存時にサンプリングレートを22050に指定
+    save(a.wav_out, restored.cpu(), sr=22050)
 
 
 if __name__ == "__main__":
