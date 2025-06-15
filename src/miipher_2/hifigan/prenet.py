@@ -1,16 +1,17 @@
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 # HiFi-GAN UNIVERSAL_V1が想定するパラメータ
 TARGET_SR = 22050
 TARGET_HOP_SIZE = 256
-TARGET_FRAME_RATE = TARGET_SR / TARGET_HOP_SIZE # 86.1328... Hz
+TARGET_FRAME_RATE = TARGET_SR / TARGET_HOP_SIZE  # 86.1328... Hz
 
 # mHuBERTのパラメータ
 MHUBERT_SR = 16000
 MHUBERT_STRIDE = 320
-MHUBERT_FRAME_RATE = MHUBERT_SR / MHUBERT_STRIDE # 50.0 Hz
+MHUBERT_FRAME_RATE = MHUBERT_SR / MHUBERT_STRIDE  # 50.0 Hz
+
 
 class MHubertToMel(nn.Module):
     def __init__(self) -> None:
@@ -19,7 +20,7 @@ class MHubertToMel(nn.Module):
         self.proj = nn.Conv1d(768, 80, 1)
 
         # 2. フレームレートを変換するためのスケールファクター
-        self.scale_factor = TARGET_FRAME_RATE / MHUBERT_FRAME_RATE # 約1.7226
+        self.scale_factor = TARGET_FRAME_RATE / MHUBERT_FRAME_RATE  # 約1.7226
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -33,10 +34,4 @@ class MHubertToMel(nn.Module):
 
         # 時間軸を線形補間でリサンプリング
         # (B, 80, T_hubert) -> (B, 80, T_hifigan)
-        x = F.interpolate(
-            x,
-            scale_factor=self.scale_factor,
-            mode='linear',
-            align_corners=False
-        )
-        return x
+        return F.interpolate(x, scale_factor=self.scale_factor, mode="linear", align_corners=False)

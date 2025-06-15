@@ -2,6 +2,7 @@ import torchaudio
 import webdataset as wds
 from torch.utils.data import IterableDataset
 
+
 # Adapter学習用: 全て16kHzに変換する
 class AdapterDataset(IterableDataset):
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
