@@ -25,7 +25,7 @@ class Preprocessor:
         """
         self.cfg = cfg
         self.dataset = hydra.utils.instantiate(cfg.preprocess.preprocess_dataset)
-        self.sampling_rate = self.cfg.sample_rate
+        self.sampling_rate = self.cfg.sampling_rate
         self.degradation_model = DegradationApplier(cfg.preprocess.degradation)
         self.text2phone_dict = {}
         self.n_repeats = cfg.preprocess.n_repeats
@@ -37,10 +37,10 @@ class Preprocessor:
         audio_file_path: pathlib.Path,
         lang_code: str,
     ) -> list[dict[str, bytes | str]]:
-        orig_waveform, sample_rate = torchaudio.load(audio_file_path)
+        orig_waveform, orig_sample_rate = torchaudio.load(audio_file_path)
 
         waveform: torch.Tensor = torchaudio.functional.resample(
-            orig_waveform, sample_rate, new_freq=self.sampling_rate
+            orig_waveform, orig_sample_rate, new_freq=self.sampling_rate
         )[0]  # remove channel dimension only support mono
 
         with audio_file_path.open(mode="rb") as f:

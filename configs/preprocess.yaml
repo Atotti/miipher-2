@@ -61,10 +61,10 @@ preprocess:
           - '**/*.wav'
   train_tar_sink:
     _target_: webdataset.ShardWriter
-    pattern: /home/ayu/datasets/jvs/jvs-train-%06d.tar.gz
+    pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-%06d.tar.gz
   val_tar_sink:
     _target_: webdataset.ShardWriter
-    pattern: /home/ayu/datasets/jvs/jvs-val-%06d.tar.gz
+    pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-%06d.tar.gz
   val_size: 600
   n_repeats: 4
-sample_rate: 16000
+sampling_rate: 16000
