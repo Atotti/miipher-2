@@ -55,6 +55,8 @@ def codec(wav, codec_name="mp3"):
     else:  # amr
         enc = ["-codec:a", "libopencore_amrwb", "-b:a", "16k"]
     cmd_enc = ["ffmpeg", "-f", "wav", "-i", "-", *enc, "-f", "wav", "-"]
-    proc = subprocess.run(cmd_enc, input=wav.cpu().numpy().astype("float32").tobytes(), capture_output=True, check=False)
+    proc = subprocess.run(
+        cmd_enc, input=wav.cpu().numpy().astype("float32").tobytes(), capture_output=True, check=False
+    )
     wav_d, _ = torchaudio.load(io.BytesIO(proc.stdout))
     return wav_d.to(wav.device)

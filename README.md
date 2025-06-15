@@ -32,7 +32,7 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ###  Parallel Adapter
 
 ```bash
-uv run cmd/train_hubert.py --config-name adapter
+uv run cmd/train_adapter.py --config-name adapter
 ```
 
 ### HiFi‑GAN fine‑tune

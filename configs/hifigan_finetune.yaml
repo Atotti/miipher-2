@@ -1,11 +1,14 @@
-stage: finetune
 dataset:
-  list: data/train.lst          # wav list
+  path_pattern: /mnt/hdd/miipher2/miipher2-train-{000000..000999}.tar.gz
+batch_size: 4
 adapter_ckpt: exp/adapter/adapter_final.pt
-pretrained: assets/hifigan_pretrained.pt
+pretrained_gen: assets/hifigan_universal_v1.pt
+upsample_rates: [3, 3, 7, 7] # 16 kHz→22.05 kHz (= ×1.378) を近似
+upsample_kernel_sizes: [9, 9, 14, 14]
+target_sr: 22050                   # 出力 SR
+save_dir: exp/hifigan_ft           # チェックポイント出力先
 steps: 400000
-lr: 0.0002
-save_dir: exp/hifigan_ft
+lr: 2.0e-4
 lambda_stft: 1.0
 lambda_mpd: 2.5
 lambda_msd: 2.5

@@ -1,10 +1,3 @@
-# ------------------------------------------------------------
-#  miipher/vocoder/hifigan/prenet.py
-# ------------------------------------------------------------
-"""
-mHuBERT 50 Hz・768ch → 200 Hz・128mel へ変換する ConvTranspose ‑ Prenet
-"""
-
 from torch import nn
 
 
@@ -26,4 +19,4 @@ class MHubertToMel(nn.Module):
                     nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        return self.main(x)  # (B, 128, 4*T) => 200 Hz
+        return self.main(x)  # (B, 128, 4*T) => 200 Hz
