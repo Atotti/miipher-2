@@ -27,7 +27,9 @@ def train_adapter(cfg: DictConfig) -> None:
         betas=tuple(cfg.optim.betas),
     )
     scaler = torch.cuda.amp.GradScaler()
-    l1 = nn.L1Loss()
+
+    mae_loss_fn = nn.L1Loss()
+    mse_loss_fn = nn.MSELoss()
 
     # ---------------- Train loop ----------------
     it = 0
@@ -36,8 +38,22 @@ def train_adapter(cfg: DictConfig) -> None:
             noisy, clean = noisy.cuda(), clean.cuda()
             with torch.cuda.amp.autocast(dtype=torch.bfloat16):
                 pred = model(noisy)
-                target = model.extractor(clean)
-                loss = l1(pred, target) + (pred - target).square().mean()
+                with torch.no_grad():
+                    target = model.extractor(clean)
+
+                # --- 損失計算 ---
+
+                # 1. Mean Absolute Error (MAE)
+                mae_loss = mae_loss_fn(pred, target)
+
+                # 2. Mean Squared Error (MSE)
+                mse_loss = mse_loss_fn(pred, target)
+
+                # 3. Spectral Convergence-like loss
+                sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+
+                # 3つの損失を合計
+                loss = mae_loss + mse_loss + sc_loss
 
             scaler.scale(loss).backward()
             scaler.step(opt)
@@ -45,7 +61,14 @@ def train_adapter(cfg: DictConfig) -> None:
             opt.zero_grad(set_to_none=True)
 
             if it % cfg.log_interval == 0:
-                print(f"[Adapter] ep{ep + 1} it{it:>6}  L={loss.item():.4f}")
+                # ログ出力をより詳細に
+                print(
+                    f"[Adapter] ep{ep + 1} it{it:>6} | "
+                    f"Total Loss={loss.item():.4f} | "
+                    f"MAE={mae_loss.item():.4f} | "
+                    f"MSE={mse_loss.item():.4f} | "
+                    f"SC={sc_loss.item():.4f}"
+                )
             it += 1
 
     # ---------------- Save ----------------

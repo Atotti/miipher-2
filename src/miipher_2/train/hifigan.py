@@ -123,4 +123,5 @@ def train_hifigan(cfg: DictConfig) -> None:
                 },
                 sd / f"g_{(step + 1) // 1000}k.pth",
             )
-            save(sd / f"sample_{step + 1}.wav", fake[0:1].cpu())
+            save(sd / f"sample_{step + 1}.wav", fake_22k[0:1].cpu())
+
