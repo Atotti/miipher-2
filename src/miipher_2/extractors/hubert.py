@@ -1,13 +1,3 @@
-# ------------------------------------------------------------
-#  miipher/extractors/mhubert.py
-# ------------------------------------------------------------
-"""
-Frozen mHuBERT (147‑lang, base, 2nd‑iter) 抽出器。
-9層目 (index=9) の hidden_states を (B,768,T) で返します。
-"""
-
-from typing import List, Union
-
 import torch
 from transformers import HubertModel, Wav2Vec2FeatureExtractor
 

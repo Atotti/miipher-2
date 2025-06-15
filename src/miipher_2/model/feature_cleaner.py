@@ -1,14 +1,7 @@
-# ------------------------------------------------------------
-#  miipher/model/feature_cleaner.py
-# ------------------------------------------------------------
-"""
-Conformer 部分を廃止し、mHuBERT+ParallelAdapter へ置換した FeatureCleaner
-"""
-
 from torch import nn
 
 from miipher_2.adapters.parallel_adapter import ParallelAdapter
-from miipher_2.extractors.mhubert import MHubert9
+from miipher_2.extractors.hubert import MHubert9
 
 
 class FeatureCleaner(nn.Module):

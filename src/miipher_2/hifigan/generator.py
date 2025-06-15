@@ -1,18 +1,4 @@
-# ------------------------------------------------------------
-#  src/miipher_2/hifigan/generator.py
-# ------------------------------------------------------------
-"""
-HiFi‑GAN Generator (V1 相当) を mHuBERT 特徴入力用に拡張
-
-・入力    : (B, 768, T50)   … mHuBERT 9 層出力 (50 Hz)
-・Prenet  : ConvT×2 で 128ch, 200 Hz mel‑like に変換
-・出力    : (B, 1,   T50*200/50 = T200*5*4*2*2) → 16 kHz 波形
-
-Upsample フィルタや ResBlock 数は論文と同一。
-"""
-
 from collections.abc import Sequence
-from typing import List
 
 import torch
 import torch.nn.functional as F

@@ -1,18 +1,11 @@
-# ------------------------------------------------------------
-#  miipher/infer.py
-# ------------------------------------------------------------
-"""
-単発 WAV 推論 CLI
-"""
-
 import argparse
 import pathlib
 
 import torch
 
+from miipher_2.hifigan.generator import Generator
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import load, save
-from miipher_2.vocoder.hifigan.generator import Generator
 
 
 def parse():

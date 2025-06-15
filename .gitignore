@@ -17,3 +17,4 @@ download/
 datasets/
 
 wandb/
+exp/

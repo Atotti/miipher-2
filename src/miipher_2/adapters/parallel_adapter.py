@@ -1,11 +1,3 @@
-# ------------------------------------------------------------
-#  miipher/adapters/parallel_adapter.py
-# ------------------------------------------------------------
-"""
-Miipher‑2 論文準拠の Parallel Adapter。
-Transformer 各ブロックの出力 x に FFN(x) を並列加算。
-"""
-
 import torch
 from torch import nn
 

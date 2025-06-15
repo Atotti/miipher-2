@@ -6,10 +6,6 @@ SR16 = 16_000
 
 
 class WavPairDataset(IterableDataset):
-    """
-    yield: noisy(1,T), clean(1,T) – both 16 kHz mono tensors
-    """
-
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
         self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
 
