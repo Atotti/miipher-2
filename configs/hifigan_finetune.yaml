@@ -1,5 +1,5 @@
 dataset:
-  path_pattern: /mnt/hdd/miipher2/miipher2-train-{000000..000999}.tar.gz
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
 batch_size: 4
 adapter_ckpt: exp/adapter/adapter_final.pt
 pretrained_gen: assets/hifigan_universal_v1.pt

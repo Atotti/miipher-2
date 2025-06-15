@@ -1,5 +1,7 @@
 dataset:
-  list: data/train.lst
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
+  shuffle: 1000          # wds shuffle size
+batch_size: 8            # Adapter 用
 epochs: 5
 optim:
   lr: 2.0e-4
