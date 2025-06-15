@@ -1,5 +1,5 @@
 dataset:
-  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
   shuffle: 1000
 batch_size: 4
 loader:
@@ -10,8 +10,12 @@ adapter_ckpt: exp/adapter/adapter_final.pt
 pretrained_gen: assets/hifigan_universal_v1.pt   # 事前学習済み G
 
 # ----- Generator アーキテクチャ -----
-upsample_rates:        [3, 3, 7, 7]   # 16 kHz→22.05 kHz ≒ ×1.378
-upsample_kernel_sizes: [9, 9, 14, 14]
+upsample_rates:        [8, 8, 2, 2] # 8*8*2*2 = 256
+upsample_kernel_sizes: [16, 16, 4, 4]
+# UNIVERSAL_V1はresblockのカーネルサイズとdilationも固定されています
+# generator.py側で固定されている場合は不要ですが、念のため記載します
+resblock_kernel_sizes: [3, 7, 11]
+resblock_dilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
 
 # ----- 学習ハイパーパラメータ -----
 steps: 400_000

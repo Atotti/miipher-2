@@ -1,0 +1,16 @@
+dataset:
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000999}.tar.gz
+  shuffle: 1000
+batch_size: 8
+epochs: 5
+optim:
+  lr: 0.0002
+  weight_decay: 0.01
+  betas:
+  - 0.9
+  - 0.95
+loader:
+  num_workers: 8
+  pin_memory: true
+save_dir: exp/adapter
+log_interval: 100

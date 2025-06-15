@@ -22,11 +22,11 @@ class Generator(nn.Module):
     ) -> None:
         super().__init__()
 
-        # --- Prenet: 768→128 ch, 50 Hz→200 Hz -----------------
-        self.prenet = MHubertToMel()  # (B,128,T50) -> (B,128,T200)
+        # --- Prenet: 768→80 ch, 50 Hz→86.13Hz -----------------
+        self.prenet = MHubertToMel()  # (B,80,T50) -> (B,80,T200)
 
         # --- Initial conv -------------------------------------
-        self.pre_conv = nn.Conv1d(128, channels, kernel_size, 1, padding=(kernel_size - 1) // 2)
+        self.pre_conv = nn.Conv1d(80, channels, kernel_size, 1, padding=(kernel_size - 1) // 2)
 
         # --- Upsample layers ----------------------------------
         self.ups = nn.ModuleList()

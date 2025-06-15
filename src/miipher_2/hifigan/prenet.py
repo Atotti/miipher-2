@@ -1,22 +1,42 @@
+import torch
 from torch import nn
+import torch.nn.functional as F
 
+# HiFi-GAN UNIVERSAL_V1が想定するパラメータ
+TARGET_SR = 22050
+TARGET_HOP_SIZE = 256
+TARGET_FRAME_RATE = TARGET_SR / TARGET_HOP_SIZE # 86.1328... Hz
+
+# mHuBERTのパラメータ
+MHUBERT_SR = 16000
+MHUBERT_STRIDE = 320
+MHUBERT_FRAME_RATE = MHUBERT_SR / MHUBERT_STRIDE # 50.0 Hz
 
 class MHubertToMel(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.main = nn.Sequential(
-            nn.ConvTranspose1d(768, 384, 4, 2, 1),
-            nn.LeakyReLU(0.1, True),
-            nn.ConvTranspose1d(384, 128, 4, 2, 1),
-            nn.LeakyReLU(0.1, True),
-            nn.Conv1d(128, 128, 1),
-        )
-        # He 正規分布初期化
-        for m in self.modules():
-            if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d)):
-                nn.init.normal_(m.weight, 0.0, 0.02)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
+        # 1. 次元数を768から80に変換する
+        self.proj = nn.Conv1d(768, 80, 1)
 
-    def forward(self, x):
-        return self.main(x)  # (B, 128, 4*T) => 200 Hz
+        # 2. フレームレートを変換するためのスケールファクター
+        self.scale_factor = TARGET_FRAME_RATE / MHUBERT_FRAME_RATE # 約1.7226
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): mHuBERTからの特徴量 (B, 768, T_hubert)
+        Returns:
+            torch.Tensor: HiFi-GAN用の特徴量 (B, 80, T_hifigan)
+        """
+        # 次元数を射影
+        x = self.proj(x)
+
+        # 時間軸を線形補間でリサンプリング
+        # (B, 80, T_hubert) -> (B, 80, T_hifigan)
+        x = F.interpolate(
+            x,
+            scale_factor=self.scale_factor,
+            mode='linear',
+            align_corners=False
+        )
+        return x

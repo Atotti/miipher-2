@@ -19,5 +19,5 @@ class MHubert9(torch.nn.Module):
             feat: (B, 768, T/320) 50 Hz
         """
         hs: list[torch.Tensor] = self.hubert(wav, output_hidden_states=True, return_dict=True).hidden_states
-        # 9番目 (0‑based) を転置
+        # 9番目 (0-based) を転置
         return hs[9].transpose(1, 2).contiguous()

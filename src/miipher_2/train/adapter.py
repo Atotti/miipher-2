@@ -5,19 +5,19 @@ from omegaconf import DictConfig
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from miipher_2.data.webdataset_loader import WavPairDataset
+from miipher_2.data.webdataset_loader import AdapterDataset
 from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
 def train_adapter(cfg: DictConfig) -> None:
     # ---------------- Data ----------------
     dl = DataLoader(
-        WavPairDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
+        # 使用するクラスをAdapterDatasetに変更
+        AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
     )
-
     # ---------------- Model ----------------
     model = FeatureCleaner().cuda()
     opt = optim.AdamW(

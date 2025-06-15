@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
-from miipher_2.data.webdataset_loader import WavPairDataset
+from miipher_2.data.webdataset_loader import VocoderDataset
 from miipher_2.hifigan.discriminator import MultiPeriodDiscriminator, MultiScaleDiscriminator
 from miipher_2.hifigan.generator import Generator
 from miipher_2.model.feature_cleaner import FeatureCleaner
@@ -47,7 +47,8 @@ def _load_pretrained(gen: Generator, path: pathlib.Path) -> None:
 def train_hifigan(cfg: DictConfig) -> None:
     # --- Data
     dl = DataLoader(
-        WavPairDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
+        # 使用するクラスをVocoderDatasetに変更
+        VocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
@@ -69,21 +70,22 @@ def train_hifigan(cfg: DictConfig) -> None:
     # --- Loop
     for step in range(cfg.steps):
         try:
-            noisy, clean = next(dl_iter)
+            noisy_16k, clean_22k = next(dl_iter)
         except StopIteration:
             dl_iter = iter(dl)
-            noisy, clean = next(dl_iter)
+            noisy_16k, clean_22k = next(dl_iter)
 
-        noisy, clean = noisy.cuda(), clean.cuda()
+        noisy_16k, clean_22k = noisy_16k.cuda(), clean_22k.cuda()
+
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            feat = cleaner(noisy)
-            fake = gen(feat)
-            l_stft = stft_loss(fake, clean)
+            feat = cleaner(noisy_16k)
+            fake_22k = gen(feat)
+            l_stft = stft_loss(fake_22k, clean_22k)
 
         # ---- D
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            d_real = [d(clean) for d in (mpd, msd)]
-            d_fake = [d(fake.detach()) for d in (mpd, msd)]
+            d_real = [d(clean_22k) for d in (mpd, msd)]
+            d_fake = [d(fake_22k.detach()) for d in (mpd, msd)]
             l_d = sum(
                 (r[0] - 1).square().mean() + f[0].square().mean()
                 for r, f in zip(itertools.chain(*d_real), itertools.chain(*d_fake), strict=False)
@@ -96,7 +98,7 @@ def train_hifigan(cfg: DictConfig) -> None:
 
         # ---- G
         with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            g_adv = sum((f[0] - 1).square().mean() for f in itertools.chain(mpd(fake), msd(fake)))
+            g_adv = sum((f[0] - 1).square().mean() for f in itertools.chain(mpd(fake_22k), msd(fake_22k)))
             l_g = cfg.lambda_stft * l_stft + cfg.lambda_mpd * g_adv / 2 + cfg.lambda_msd * g_adv / 2
 
         scaler.scale(l_g).backward()

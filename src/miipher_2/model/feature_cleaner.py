@@ -10,7 +10,7 @@ class FeatureCleaner(nn.Module):
         self.extractor = MHubert9()
         # mHuBERT の 12 Transformer ブロックに Adapter を挿入
         for blk in self.extractor.hubert.encoder.layers:
-            blk.adapter = ParallelAdapter(dim=768, hidden=1024).to(blk.self_attn.q_proj.weight.device)
+            blk.adapter = ParallelAdapter(dim=768, hidden=1024).to(blk.attention.q_proj.weight.device)
             original_forward = blk.forward
 
             def patched_forward(x, *args, _orig=original_forward, _ad=blk.adapter, **kwargs):
