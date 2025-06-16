@@ -43,7 +43,7 @@ def train_adapter(cfg: DictConfig) -> None:
         collate_fn=collate_tensors,
     )
     # ---------------- Model ----------------
-    model = FeatureCleaner().cuda()
+    model = FeatureCleaner(hubert_model_name=cfg.model.hubert_model_name).cuda()
     opt = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.optim.lr,
@@ -114,8 +114,6 @@ def train_adapter(cfg: DictConfig) -> None:
         artifact.add_file(str(model_path))
         wandb.log_artifact(artifact)
         print("[INFO] Model saved as wandb artifact")
-
-
 
     if cfg.wandb.enabled:
         wandb.finish()

@@ -1,7 +1,7 @@
 import torch
 from transformers import HubertModel, Wav2Vec2FeatureExtractor
 
-_MODEL_NAME = "utter-project/mHuBERT-147-base-2nd-iter"
+_MODEL_NAME = "utter-project/mHuBERT-147"
 
 
 class MHubert9(torch.nn.Module):
@@ -13,9 +13,9 @@ class MHubert9(torch.nn.Module):
     def forward(self, wav: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            wav: (B, T) float32, 16 kHz, ‑1 〜 1
+            wav: (B, T) float32, 16 kHz, -1 〜 1
         Returns:
-            feat: (B, 768, T/320) 50 Hz
+            feat: (B, 768, T/320) 50 Hz
         """
         hs: list[torch.Tensor] = self.hubert(wav, output_hidden_states=True, return_dict=True).hidden_states
         # 9番目 (0-based) を転置

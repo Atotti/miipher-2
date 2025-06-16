@@ -165,11 +165,7 @@ def train_hifigan(cfg: DictConfig) -> None:
                     wandb.log_artifact(audio_artifact)
 
                     # Also log audio directly to wandb
-                    wandb.log(
-                        {"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=22050)}, step=step
-                    )
-
+                    wandb.log({"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=22050)}, step=step)
 
     if cfg.wandb.enabled:
         wandb.finish()
-

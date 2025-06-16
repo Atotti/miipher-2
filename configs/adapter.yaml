@@ -1,3 +1,7 @@
+# Model configuration
+model:
+  hubert_model_name: "utter-project/mHuBERT-147"  # HuBERTベースモデル名
+
 dataset:
   path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
   shuffle: 1000          # WebDataset 内部 shuffle バッファ

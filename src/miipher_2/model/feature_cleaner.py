@@ -5,9 +5,9 @@ from miipher_2.extractors.hubert import MHubert9
 
 
 class FeatureCleaner(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, hubert_model_name: str = "utter-project/mHuBERT-147") -> None:
         super().__init__()
-        self.extractor = MHubert9()
+        self.extractor = MHubert9(model_name=hubert_model_name)
 
         # 1. まず、ベースとなるHuBERTの全パラメータを凍結する
         self.extractor.hubert.eval()
