@@ -1,6 +1,15 @@
+import torch
 import torchaudio
 import webdataset as wds
 from torch.utils.data import IterableDataset
+
+
+def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
+    """音声テンソルが必ず [channels, length] の2次元になるように保証する"""
+    if tensor.dim() == 1:
+        # テンソルが1次元の場合、チャンネル次元を追加する
+        return tensor.unsqueeze(0)
+    return tensor
 
 
 # Adapter学習用: 全て16kHzに変換する
@@ -11,14 +20,20 @@ class AdapterDataset(IterableDataset):
 
     def __iter__(self):
         for sample in self.dataset:
-            # webdatasetからロードされる音声は22.05kHz
-            clean_22k, sr = sample["speech.wav"]
-            noisy_22k, _ = sample["degraded_speech.wav"]
+            clean_wav, clean_sr = sample["speech.wav"]
+            noisy_wav, noisy_sr = sample["degraded_speech.wav"]
 
-            # 両方とも16kHzにリサンプリング
-            clean_16k = torchaudio.functional.resample(clean_22k, orig_freq=sr, new_freq=self.target_sr)
-            noisy_16k = torchaudio.functional.resample(noisy_22k, orig_freq=sr, new_freq=self.target_sr)
+            # === ここから修正 ===
+            # ロードした直後に次元数を2Dに統一する
+            clean_wav = _ensure_2d(clean_wav)
+            noisy_wav = _ensure_2d(noisy_wav)
+            # === ここまで修正 ===
 
+            # それぞれの正しいsrを使って16kHzにリサンプリング
+            clean_16k = torchaudio.functional.resample(clean_wav, orig_freq=clean_sr, new_freq=self.target_sr)
+            noisy_16k = torchaudio.functional.resample(noisy_wav, orig_freq=noisy_sr, new_freq=self.target_sr)
+
+            # .mean(0, keepdim=True)はステレオ音声をモノラルに変換する安全策として残しておく
             yield noisy_16k.mean(0, keepdim=True), clean_16k.mean(0, keepdim=True)
 
 
@@ -31,16 +46,23 @@ class VocoderDataset(IterableDataset):
 
     def __iter__(self):
         for sample in self.dataset:
-            # webdatasetからロードされる音声は22.05kHz
-            clean_22k, sr = sample["speech.wav"]
-            noisy_22k, _ = sample["degraded_speech.wav"]
+            clean_wav, clean_sr = sample["speech.wav"]
+            noisy_wav, noisy_sr = sample["degraded_speech.wav"]
+
+            # === ここから修正 ===
+            # ロードした直後に次元数を2Dに統一する
+            clean_wav = _ensure_2d(clean_wav)
+            noisy_wav = _ensure_2d(noisy_wav)
+            # === ここまで修正 ===
 
             # 劣化音声はmHuBERTに入力するため16kHzにリサンプリング
-            noisy_16k = torchaudio.functional.resample(noisy_22k, orig_freq=sr, new_freq=self.input_sr)
+            noisy_16k = torchaudio.functional.resample(noisy_wav, orig_freq=noisy_sr, new_freq=self.input_sr)
 
             # クリーン音声は教師信号なので22.05kHzのまま
-            # サンプリングレートが完全一致しない場合があるので、念のためリサンプリング
-            if sr != self.target_sr:
-                clean_22k = torchaudio.functional.resample(clean_22k, orig_freq=sr, new_freq=self.target_sr)
+            if clean_sr != self.target_sr:
+                clean_22k = torchaudio.functional.resample(clean_wav, orig_freq=clean_sr, new_freq=self.target_sr)
+            else:
+                clean_22k = clean_wav
 
+            # .mean(0, keepdim=True)はステレオ音声をモノラルに変換する安全策として残しておく
             yield noisy_16k.mean(0, keepdim=True), clean_22k.mean(0, keepdim=True)
