@@ -12,10 +12,22 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
     return tensor
 
 
-# Adapter学習用: 全て16kHzに変換する
 class AdapterDataset(IterableDataset):
+    """Adapter学習用: 全て16kHzに変換する
+
+    Args:
+        IterableDataset (_type_): _description_
+    """
+
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+        self.dataset = (
+            wds.WebDataset(
+                pattern,
+                resampled=True,
+            )
+            .shuffle(shuffle)
+            .decode(wds.torch_audio)
+        )
         self.target_sr = 16000
 
     def __iter__(self):
@@ -37,8 +49,13 @@ class AdapterDataset(IterableDataset):
             yield noisy_16k.mean(0, keepdim=True), clean_16k.mean(0, keepdim=True)
 
 
-# Vocoder学習用: 劣化音声は16kHz、クリーン音声は22.05kHzで出力
 class VocoderDataset(IterableDataset):
+    """Vocoder学習用: 劣化音声は16kHz、クリーン音声は22.05kHzで出力
+
+    Args:
+        IterableDataset (_type_): _description_
+    """
+
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
         self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
         self.input_sr = 16000
