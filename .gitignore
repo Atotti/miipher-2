@@ -19,3 +19,4 @@ datasets/
 wandb/
 exp/
 assets/
+outputs/
