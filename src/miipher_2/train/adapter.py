@@ -75,6 +75,8 @@ def train_adapter(cfg: DictConfig) -> None:
                 loss = mae_loss + mse_loss + sc_loss
 
             scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
             scaler.step(opt)
             scaler.update()
             opt.zero_grad(set_to_none=True)

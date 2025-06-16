@@ -14,6 +14,7 @@ optim:
   lr: 2.0e-4
   weight_decay: 0.01
   betas: [0.9, 0.95]
+  max_grad_norm: 1.0  # 勾配クリッピングの最大ノルム
 
 loader:
   num_workers: 8
