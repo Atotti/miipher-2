@@ -8,9 +8,8 @@ class MHubert9(torch.nn.Module):
     def __init__(self, model_name: str = _MODEL_NAME) -> None:
         super().__init__()
         self.fe = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
-        self.hubert = HubertModel.from_pretrained(model_name, output_hidden_states=True).eval().requires_grad_(False)
+        self.hubert = HubertModel.from_pretrained(model_name, output_hidden_states=True)
 
-    @torch.no_grad()
     def forward(self, wav: torch.Tensor) -> torch.Tensor:
         """
         Args:

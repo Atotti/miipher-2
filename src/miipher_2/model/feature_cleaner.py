@@ -8,18 +8,25 @@ class FeatureCleaner(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.extractor = MHubert9()
-        # mHuBERT の 12 Transformer ブロックに Adapter を挿入
+
+        # 1. まず、ベースとなるHuBERTの全パラメータを凍結する
+        self.extractor.hubert.eval()
+        for param in self.extractor.hubert.parameters():
+            param.requires_grad = False
+
+        # 2. その後、学習させたいAdapterをアタッチする
         for blk in self.extractor.hubert.encoder.layers:
-            blk.adapter = ParallelAdapter(dim=768, hidden=1024).to(blk.attention.q_proj.weight.device)
+            blk.adapter = ParallelAdapter(dim=768, hidden=1024)
+
             original_forward = blk.forward
 
             def patched_forward(x, *args, _orig=original_forward, _ad=blk.adapter, **kwargs):
-                return _ad(_orig(x, *args, **kwargs))
+                original_outputs = _orig(x, *args, **kwargs)
+                hidden_states = original_outputs[0]
+                modified_hidden_states = _ad(hidden_states)
+                return (modified_hidden_states,) + original_outputs[1:]
 
-            blk.forward = patched_forward  # type: ignore
+            blk.forward = patched_forward
 
     def forward(self, wav16):
-        """
-        Returns: cleaned feature (B, 768, T*4) ← frame-rate は変えない
-        """
         return self.extractor(wav16)
