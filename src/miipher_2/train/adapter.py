@@ -6,11 +6,12 @@ from torch import nn, optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
+import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
 from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
-# バッチ内のテンソルの長さを揃える、より堅牢な collate_fn
+# バッチ内のテンソルの長さを揃える
 def collate_tensors(batch):
     noisy_tensors, clean_tensors = zip(*batch, strict=False)
 
@@ -23,6 +24,16 @@ def collate_tensors(batch):
 
 
 def train_adapter(cfg: DictConfig) -> None:
+    if cfg.wandb.enabled:
+        wandb.init(
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            name=cfg.wandb.name,
+            tags=cfg.wandb.tags,
+            notes=cfg.wandb.notes,
+            config=dict(cfg),
+        )
+
     # ---------------- Data ----------------
     dl = DataLoader(
         AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
@@ -69,6 +80,16 @@ def train_adapter(cfg: DictConfig) -> None:
             opt.zero_grad(set_to_none=True)
 
             if it % cfg.log_interval == 0:
+                log_data = {
+                    "epoch": ep + 1,
+                    "iteration": it,
+                    "loss/total": loss.item(),
+                    "loss/mae": mae_loss.item(),
+                    "loss/mse": mse_loss.item(),
+                    "loss/sc": sc_loss.item(),
+                    "learning_rate": opt.param_groups[0]["lr"],
+                }
+
                 print(
                     f"[Adapter] ep{ep + 1} it{it:>6} | "
                     f"Total Loss={loss.item():.4f} | "
@@ -76,9 +97,25 @@ def train_adapter(cfg: DictConfig) -> None:
                     f"MSE={mse_loss.item():.4f} | "
                     f"SC={sc_loss.item():.4f}"
                 )
+
+                if cfg.wandb.enabled:
+                    wandb.log(log_data, step=it)
             it += 1
 
     # ---------------- Save ----------------
     sd = pathlib.Path(cfg.save_dir)
     sd.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), sd / "adapter_final.pt")
+    model_path = sd / "adapter_final.pt"
+    torch.save(model.state_dict(), model_path)
+
+    # Log model as wandb artifact
+    if cfg.wandb.enabled and cfg.wandb.log_model:
+        artifact = wandb.Artifact("adapter_model", type="model")
+        artifact.add_file(str(model_path))
+        wandb.log_artifact(artifact)
+        print("[INFO] Model saved as wandb artifact")
+
+
+
+    if cfg.wandb.enabled:
+        wandb.finish()

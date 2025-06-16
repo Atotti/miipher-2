@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 from torch import optim
 from torch.utils.data import DataLoader
 
+import wandb
 from miipher_2.data.webdataset_loader import VocoderDataset
 from miipher_2.hifigan.discriminator import MultiPeriodDiscriminator, MultiScaleDiscriminator
 from miipher_2.hifigan.generator import Generator
@@ -43,8 +44,17 @@ def _load_pretrained(gen: Generator, path: pathlib.Path) -> None:
     print(f"[INFO] pre‑trained G loaded: {path}")
 
 
-# ---------------- main ----------------
 def train_hifigan(cfg: DictConfig) -> None:
+    if cfg.wandb.enabled:
+        wandb.init(
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            name=cfg.wandb.name,
+            tags=cfg.wandb.tags,
+            notes=cfg.wandb.notes,
+            config=dict(cfg),
+        )
+
     # --- Data
     dl = DataLoader(
         # 使用するクラスをVocoderDatasetに変更
@@ -108,11 +118,26 @@ def train_hifigan(cfg: DictConfig) -> None:
 
         # ---- log / save
         if (step % cfg.log_interval) == 0:
+            log_data = {
+                "step": step,
+                "loss/generator": l_g.item(),
+                "loss/discriminator": l_d.item(),
+                "loss/stft": l_stft.item(),
+                "loss/adversarial": g_adv.item(),
+                "learning_rate": opt_g.param_groups[0]["lr"],
+            }
+
             print(f"[G] step {step:>6}/{cfg.steps}  L_STFT:{l_stft:.3f}  L_adv:{g_adv:.3f}")
+
+            if cfg.wandb.enabled:
+                wandb.log(log_data, step=step)
 
         if (step + 1) % cfg.checkpoint_interval == 0:
             sd = pathlib.Path(cfg.save_dir)
             sd.mkdir(parents=True, exist_ok=True)
+            checkpoint_path = sd / f"g_{(step + 1) // 1000}k.pth"
+            sample_path = sd / f"sample_{step + 1}.wav"
+
             torch.save(
                 {
                     "step": step + 1,
@@ -121,6 +146,30 @@ def train_hifigan(cfg: DictConfig) -> None:
                     "mpd": mpd.state_dict(),
                     "msd": msd.state_dict(),
                 },
-                sd / f"g_{(step + 1) // 1000}k.pth",
+                checkpoint_path,
             )
-            save(sd / f"sample_{step + 1}.wav", fake_22k[0:1].cpu())
+            save(sample_path, fake_22k[0:1].cpu(), sr=22050)
+
+            # Log model checkpoint and audio sample as wandb artifacts
+            if cfg.wandb.enabled:
+                # Log model checkpoint
+                if cfg.wandb.log_model:
+                    model_artifact = wandb.Artifact(f"hifigan_checkpoint_{step + 1}", type="model")
+                    model_artifact.add_file(str(checkpoint_path))
+                    wandb.log_artifact(model_artifact)
+
+                # Log audio sample
+                if cfg.wandb.log_audio:
+                    audio_artifact = wandb.Artifact(f"audio_sample_{step + 1}", type="audio")
+                    audio_artifact.add_file(str(sample_path))
+                    wandb.log_artifact(audio_artifact)
+
+                    # Also log audio directly to wandb
+                    wandb.log(
+                        {"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=22050)}, step=step
+                    )
+
+
+    if cfg.wandb.enabled:
+        wandb.finish()
+

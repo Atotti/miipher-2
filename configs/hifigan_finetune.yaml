@@ -28,3 +28,14 @@ lambda_msd: 2.5
 save_dir: exp/hifigan_ft
 log_interval: 1_000     # iter ごとにログ
 checkpoint_interval: 50_000
+
+# Wandb logging configuration
+wandb:
+  enabled: true
+  project: "miipher-2-hifigan"
+  entity: null             # デフォルトのwandbエンティティを使用
+  name: null               # 実行名を自動生成
+  tags: ["hifigan", "vocoder", "finetune"]
+  notes: "HiFi-GAN fine-tuning for Miipher-2"
+  log_model: true
+  log_audio: true          # 音声サンプルをログ

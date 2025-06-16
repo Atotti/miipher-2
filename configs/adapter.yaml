@@ -15,3 +15,13 @@ loader:
 
 save_dir: exp/adapter
 log_interval: 100        # iter ごとに損失表示
+
+# Wandb logging configuration
+wandb:
+  enabled: true
+  project: "miipher-2-adapter"
+  entity: null             # デフォルトのwandbエンティティを使用
+  name: null               # 実行名を自動生成
+  tags: ["adapter", "training"]
+  notes: "Parallel Adapter training for Miipher-2"
+  log_model: true
