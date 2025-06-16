@@ -1,3 +1,4 @@
+import math
 import pathlib
 
 import torch
@@ -5,6 +6,7 @@ from omegaconf import DictConfig
 from torch import nn, optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+from transformers import get_scheduler
 
 import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
@@ -52,6 +54,15 @@ def train_adapter(cfg: DictConfig) -> None:
     )
     scaler = torch.amp.GradScaler("cuda")
 
+    num_training_steps = math.ceil(21 * 1000 / cfg.batch_size) * cfg.epochs
+
+    scheduler = get_scheduler(
+        name=cfg.optim.scheduler.name,
+        optimizer=opt,
+        num_warmup_steps=cfg.optim.scheduler.warmup_steps,
+        num_training_steps=num_training_steps,
+    )
+
     mae_loss_fn = nn.L1Loss()
     mse_loss_fn = nn.MSELoss()
 
@@ -75,10 +86,15 @@ def train_adapter(cfg: DictConfig) -> None:
                 loss = mae_loss + mse_loss + sc_loss
 
             scaler.scale(loss).backward()
+
             scaler.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
+
             scaler.step(opt)
             scaler.update()
+
+            scheduler.step()
+
             opt.zero_grad(set_to_none=True)
 
             if it % cfg.log_interval == 0:
@@ -89,7 +105,7 @@ def train_adapter(cfg: DictConfig) -> None:
                     "loss/mae": mae_loss.item(),
                     "loss/mse": mse_loss.item(),
                     "loss/sc": sc_loss.item(),
-                    "learning_rate": opt.param_groups[0]["lr"],
+                    "learning_rate": scheduler.get_last_lr()[0],
                 }
 
                 print(
