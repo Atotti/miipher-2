@@ -43,7 +43,7 @@ def train_adapter(cfg: DictConfig) -> None:
         collate_fn=collate_tensors,
     )
     # ---------------- Model ----------------
-    model = FeatureCleaner(hubert_model_name=cfg.model.hubert_model_name).cuda()
+    model = FeatureCleaner(cfg.model).cuda()
     opt = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.optim.lr,

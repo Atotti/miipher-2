@@ -72,7 +72,7 @@ class VocoderDataset(IterableDataset):
             noisy_wav = _ensure_2d(noisy_wav)
             # === ここまで修正 ===
 
-            # 劣化音声はmHuBERTに入力するため16kHzにリサンプリング
+            # 劣化音声はHuBERTに入力するため16kHzにリサンプリング
             noisy_16k = torchaudio.functional.resample(noisy_wav, orig_freq=noisy_sr, new_freq=self.input_sr)
 
             # クリーン音声は教師信号なので22.05kHzのまま

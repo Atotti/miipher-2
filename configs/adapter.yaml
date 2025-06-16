@@ -1,6 +1,8 @@
 # Model configuration
 model:
-  hubert_model_name: "utter-project/mHuBERT-147"  # HuBERTベースモデル名
+  hubert_model_name: "rinna/japanese-hubert-large"  # HuBERTベースモデル名
+  hubert_layer: 12          # 使用するHuBERTの層（0-based）
+  adapter_hidden_dim: 1024  # Adapterの中間層の次元数
 
 dataset:
   path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz

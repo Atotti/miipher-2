@@ -3,7 +3,7 @@ from torch import nn
 
 
 class ParallelAdapter(nn.Module):
-    def __init__(self, dim: int = 768, hidden: int = 1024) -> None:
+    def __init__(self, dim: int, hidden: int = 1024) -> None:
         super().__init__()
         self.ff = nn.Sequential(
             nn.LayerNorm(dim),

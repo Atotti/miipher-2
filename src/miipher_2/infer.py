@@ -14,12 +14,13 @@ def parse():
     ap.add_argument("--vocoder", type=pathlib.Path, required=True)
     ap.add_argument("--in", dest="wav_in", type=pathlib.Path, required=True)
     ap.add_argument("--out", dest="wav_out", type=pathlib.Path, required=True)
+    ap.add_argument("--hubert-layer", type=int, default=9, help="HuBERT layer to use (0-based)")
     return ap.parse_args()
 
 
 def main() -> None:
     a = parse()
-    cleaner = FeatureCleaner().cuda().eval()
+    cleaner = FeatureCleaner(hubert_layer=a.hubert_layer).cuda().eval()
     cleaner.load_state_dict(torch.load(a.adapter, map_location="cpu"))
     gen = Generator().cuda().eval()
     gen.load_state_dict(torch.load(a.vocoder, map_location="cpu")["gen"])

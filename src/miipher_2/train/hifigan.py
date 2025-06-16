@@ -26,8 +26,9 @@ def stft_loss(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 
 
 # ---------------- build ----------------
-def _build_gen(cfg: DictConfig) -> Generator:
+def _build_gen(cfg: DictConfig, hubert_dim: int) -> Generator:  # hubert_dimを受け取る
     return Generator(
+        hubert_dim=hubert_dim,
         upsample_rates=cfg.upsample_rates,
         upsample_kernel_sizes=cfg.upsample_kernel_sizes,
     ).cuda()
@@ -66,9 +67,11 @@ def train_hifigan(cfg: DictConfig) -> None:
     dl_iter = iter(dl)
 
     # --- Models
-    cleaner = FeatureCleaner().cuda().eval()
+    cleaner = FeatureCleaner(cfg.model).cuda().eval()
     cleaner.load_state_dict(torch.load(cfg.adapter_ckpt, map_location="cpu"))
-    gen = _build_gen(cfg)
+    hubert_dim = cleaner.extractor.hubert.config.hidden_size
+
+    gen = _build_gen(cfg, hubert_dim=hubert_dim)
     _load_pretrained(gen, pathlib.Path(cfg.pretrained_gen))
     mpd, msd = MultiPeriodDiscriminator().cuda(), MultiScaleDiscriminator().cuda()
 

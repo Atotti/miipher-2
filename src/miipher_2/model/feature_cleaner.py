@@ -1,13 +1,17 @@
+from omegaconf import DictConfig
 from torch import nn
 
 from miipher_2.adapters.parallel_adapter import ParallelAdapter
-from miipher_2.extractors.hubert import MHubert9
+from miipher_2.extractors.hubert import HubertExtractor
 
 
 class FeatureCleaner(nn.Module):
-    def __init__(self, hubert_model_name: str = "utter-project/mHuBERT-147") -> None:
+    def __init__(self, cfg_model: DictConfig) -> None:
         super().__init__()
-        self.extractor = MHubert9(model_name=hubert_model_name)
+        self.extractor = HubertExtractor(
+            model_name=cfg_model.hubert_model_name,
+            layer=cfg_model.hubert_layer,
+        )
 
         # 1. まず、ベースとなるHuBERTの全パラメータを凍結する
         self.extractor.hubert.eval()
@@ -15,9 +19,10 @@ class FeatureCleaner(nn.Module):
             param.requires_grad = False
 
         # 2. その後、学習させたいAdapterをアタッチする
-        for blk in self.extractor.hubert.encoder.layers:
-            blk.adapter = ParallelAdapter(dim=768, hidden=1024)
+        hubert_dim = self.extractor.hubert.config.hidden_size
 
+        for blk in self.extractor.hubert.encoder.layers:
+            blk.adapter = ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim)
             original_forward = blk.forward
 
             def patched_forward(x, *args, _orig=original_forward, _ad=blk.adapter, **kwargs):

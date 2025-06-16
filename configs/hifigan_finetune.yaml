@@ -1,3 +1,8 @@
+model:
+  hubert_model_name: "rinna/japanese-hubert-large"
+  hubert_layer: 12
+  adapter_hidden_dim: 1024
+
 dataset:
   path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
   shuffle: 1000

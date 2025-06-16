@@ -11,7 +11,8 @@ from miipher_2.hifigan.prenet import MHubertToMel
 class Generator(nn.Module):
     def __init__(
         self,
-        in_channels: int = 768,  # ← 実際には Prenet側で 128ch に変換
+        hubert_dim: int,
+        in_channels: int = 80,  # Prenetからの出力次元数に合わせて修正
         channels: int = 512,
         out_channels: int = 1,
         kernel_size: int = 7,
@@ -23,10 +24,10 @@ class Generator(nn.Module):
         super().__init__()
 
         # --- Prenet: 768→80 ch, 50 Hz→86.13Hz -----------------
-        self.prenet = MHubertToMel()  # (B,80,T50) -> (B,80,T200)
+        self.prenet = MHubertToMel(hubert_dim=hubert_dim)
 
         # --- Initial conv -------------------------------------
-        self.pre_conv = nn.Conv1d(80, channels, kernel_size, 1, padding=(kernel_size - 1) // 2)
+        self.pre_conv = nn.Conv1d(in_channels, channels, kernel_size, 1, padding=(kernel_size - 1) // 2)
 
         # --- Upsample layers ----------------------------------
         self.ups = nn.ModuleList()

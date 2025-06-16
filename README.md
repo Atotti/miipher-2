@@ -1,6 +1,6 @@
 # open‑miipher‑2
 
-mHuBERT‑147 (9 th) + Parallel Adapter + HiFi‑GAN で
+rinna/japanese-hubert-large + Parallel Adapter + HiFi‑GAN で
 Miipher‑2 を再現するリポジトリです。
 
 ## 🍀 Prerequisites
