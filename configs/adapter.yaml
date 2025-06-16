@@ -24,4 +24,4 @@ wandb:
   name: null               # 実行名を自動生成
   tags: ["adapter", "training"]
   notes: "Parallel Adapter training for Miipher-2"
-  log_model: true
+  log_model: false
