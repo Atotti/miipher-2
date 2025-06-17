@@ -8,7 +8,7 @@ from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import load, save
 
 
-def parse():
+def parse() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--adapter", type=pathlib.Path, required=True)
     ap.add_argument("--vocoder", type=pathlib.Path, required=True)

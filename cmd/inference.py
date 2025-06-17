@@ -4,7 +4,7 @@ import pathlib
 from miipher_2.utils.infer import main as infer_main
 
 
-def parse():
+def parse() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--adapter", type=pathlib.Path, required=True)
     ap.add_argument("--vocoder", type=pathlib.Path, required=True)

@@ -1,9 +1,10 @@
-import torch.nn.functional as F
+import torch
 from torch import nn
+from torch.nn import functional
 
 
 class MPDSub(nn.Module):
-    def __init__(self, period) -> None:
+    def __init__(self, period: int) -> None:
         super().__init__()
         self.period = period
         chan = [32, 128, 512, 1024, 1024]
@@ -13,11 +14,11 @@ class MPDSub(nn.Module):
         self.conv_post = nn.Conv2d(chan[-1], 1, (3, 1), 1, padding=(1, 0))
         self.act = nn.LeakyReLU(0.1, True)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         b, c, t = x.shape
         if t % self.period:  # pad so that t % period == 0
             pad_len = self.period - (t % self.period)
-            x = F.pad(x, (0, pad_len), "reflect")
+            x = functional.pad(x, (0, pad_len), "reflect")
             t = t + pad_len
         x = x.view(b, 1, t // self.period, self.period)  # (B,1,T/P,P)
         fmap = []
@@ -30,19 +31,16 @@ class MPDSub(nn.Module):
 
 
 class MultiPeriodDiscriminator(nn.Module):
-    def __init__(self, periods=(2, 3, 5, 7, 11, 13, 17, 19)) -> None:
+    def __init__(self, periods: tuple[int, ...] = (2, 3, 5, 7, 11, 13, 17, 19)) -> None:
         super().__init__()
         self.discriminators = nn.ModuleList([MPDSub(p) for p in periods])
 
-    def forward(self, x):
-        rets = []
-        for d in self.discriminators:
-            rets.append(d(x))
-        return rets  # list[(score, fmap)]
+    def forward(self, x: torch.Tensor) -> list[tuple[torch.Tensor, list[torch.Tensor]]]:
+        return [d(x) for d in self.discriminators]  # list[(score, fmap)]
 
 
 class LayerDiscriminator(nn.Module):
-    def __init__(self, ch_mult) -> None:
+    def __init__(self, ch_mult: int) -> None:
         super().__init__()
         ch = [1, 32, 128, 512, 1024, 1024]
         self.convs = nn.ModuleList()
@@ -51,7 +49,7 @@ class LayerDiscriminator(nn.Module):
         self.conv_post = nn.Conv1d(ch[-1], 1, 3, 1, 1)
         self.act = nn.LeakyReLU(0.1, True)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, list[torch.Tensor]]:
         fmap = []
         for c in self.convs:
             x = self.act(c(x))
@@ -66,10 +64,10 @@ class MultiScaleDiscriminator(nn.Module):
         super().__init__()
         self.discriminators = nn.ModuleList([LayerDiscriminator(i) for i in range(3)])
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> list[tuple[torch.Tensor, list[torch.Tensor]]]:
         rets = []
         for i, d in enumerate(self.discriminators):
             if i in {1, 2}:
-                x = F.avg_pool1d(x, 4, 2, padding=1)
+                x = functional.avg_pool1d(x, 4, 2, padding=1)
             rets.append(d(x))
         return rets

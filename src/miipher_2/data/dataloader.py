@@ -7,6 +7,10 @@ from torch.utils.data import Dataset
 
 from miipher_2.utils.audio import SR, add_noise, add_reverb, codec
 
+# Constants for magic numbers
+REVERB_PROBABILITY = 0.5
+CODEC_PROBABILITY = 0.8
+
 
 class CleanNoisyDataset(Dataset):
     """
@@ -20,14 +24,14 @@ class CleanNoisyDataset(Dataset):
         return len(self.wav_files)
 
     def _degrade(self, wav: torch.Tensor) -> torch.Tensor:
-        if random.random() < 0.5:
+        if random.random() < REVERB_PROBABILITY:
             wav = add_reverb(wav, rt60=random.uniform(0.2, 0.5))
         wav = add_noise(wav, snr_db=random.uniform(5, 30))
-        if random.random() < 0.8:
+        if random.random() < CODEC_PROBABILITY:
             wav = codec(wav, random.choice(["mp3", "opus", "vorbis", "alaw", "amr"]))
         return wav
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         wav, sr = torchaudio.load(self.wav_files[idx])
         if sr != SR:
             wav = torchaudio.functional.resample(wav, sr, SR)

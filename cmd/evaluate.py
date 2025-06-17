@@ -12,15 +12,15 @@ from speaker_verification_toolkit import get_embedding
 from whisperx import load_model
 
 
-def load_for_eval(path, target_sr=22050):
+def load_for_eval(path: str | pathlib.Path, target_sr: int = 22050) -> torch.Tensor:
     """評価用に音声をロード・リサンプリングする関数"""
     wav, sr = torchaudio.load(path)
     if sr != target_sr:
         wav = torchaudio.functional.resample(wav, sr, target_sr)
-    return wav.mean(0, keepdim=True)
+    return wav.mean(0, keepdim=True)  # mono
 
 
-def parse():
+def parse() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean_dir", type=pathlib.Path, required=True)
     ap.add_argument("--rest_dir", type=pathlib.Path, required=True)
@@ -29,7 +29,7 @@ def parse():
 
 def main() -> None:
     a = parse()
-    clean_files = sorted(glob.glob(str(a.clean_dir / "*.wav")))
+    clean_files = sorted(glob.glob(str(a.clean_dir / "*.wav")))  # noqa: PTH207
     rest_files = [str(a.rest_dir / pathlib.Path(f).name) for f in clean_files]
     dns_model = dnsmos_pytorch.DNSMOS.from_pretrained()
     whisper = load_model("large-v3", device="cpu")
@@ -50,7 +50,7 @@ def main() -> None:
         squid.append(squid_py.score(cw_22k.squeeze(0), rw_22k.squeeze(0), 22050))
         spk.append(torch.cosine_similarity(get_embedding(cw_22k, 22050), get_embedding(rw_22k, 22050), 0).item())
 
-    print(f"DNSMOS‑SIG {np.mean(sig):.3f}")
+    print(f"DNSMOS-SIG {np.mean(sig):.3f}")
     print(f"SQuId      {np.mean(squid):.3f}")
     print(f"WER        {np.mean(wer) * 100:.2f}%")
     print(f"SPK cos    {np.mean(spk):.3f}")

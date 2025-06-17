@@ -27,7 +27,7 @@ class Preprocessor:
         self.dataset = hydra.utils.instantiate(cfg.preprocess.preprocess_dataset)
         self.sampling_rate = self.cfg.sampling_rate
         self.degradation_model = DegradationApplier(cfg.preprocess.degradation)
-        self.text2phone_dict = {}
+        self.text2phone_dict: dict[str, str] = {}
         self.n_repeats = cfg.preprocess.n_repeats
 
     @torch.inference_mode()  # type: ignore
@@ -73,7 +73,8 @@ class Preprocessor:
         pathlib.Path("/".join(self.cfg.preprocess.train_tar_sink.pattern.split("/")[:-1])).mkdir(exist_ok=True)
         train_sink = hydra.utils.instantiate(self.cfg.preprocess.train_tar_sink)
         val_sink = hydra.utils.instantiate(self.cfg.preprocess.val_tar_sink)
-        num_workers: int = os.cpu_count() if os.cpu_count() is not None else 8
+        cpu_count = os.cpu_count()
+        num_workers: int = cpu_count if cpu_count is not None else 8
         dataloader = DataLoader(self.dataset, batch_size=1, shuffle=True, num_workers=num_workers)
         for idx, data in enumerate(tqdm.tqdm(dataloader)):
             basename = data["basename"][0]

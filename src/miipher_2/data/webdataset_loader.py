@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+
 import torch
 import torchaudio
 import webdataset as wds
@@ -13,8 +15,7 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
 
 
 class AdapterDataset(IterableDataset):
-    """Adapter学習用: 全て16kHzに変換する
-    """
+    """Adapter学習用: 全て16kHzに変換する"""
 
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
         self.dataset = (
@@ -28,7 +29,7 @@ class AdapterDataset(IterableDataset):
         )
         self.target_sr = 16000
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         for sample in self.dataset:
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]
@@ -57,7 +58,7 @@ class VocoderDataset(IterableDataset):
         self.input_sr = 16000
         self.target_sr = 22050
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         for sample in self.dataset:
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]

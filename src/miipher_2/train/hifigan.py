@@ -42,7 +42,7 @@ def _load_pretrained(gen: Generator, path: pathlib.Path) -> None:
     if "state_dict" in state:
         state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
     gen.load_state_dict(state, strict=False)
-    print(f"[INFO] pre‑trained G loaded: {path}")
+    print(f"[INFO] pre-trained G loaded: {path}")
 
 
 def train_hifigan(cfg: DictConfig) -> None:

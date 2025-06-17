@@ -31,7 +31,7 @@ class DegradationApplier:
         self.reverb_conditions = cfg.reverb_conditions
         self.background_noise = cfg.background_noise
         self.cfg = cfg
-        self.rirs = []
+        self.rirs: list[torch.Tensor] = []
         self.prepare_rir(cfg.n_rirs)
         self.noise_audio_paths = []
         for root, pattern in self.cfg.background_noise.patterns:

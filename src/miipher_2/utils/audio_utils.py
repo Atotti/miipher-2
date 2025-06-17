@@ -8,7 +8,7 @@ class DataCollatorAudioPad:
     Returns dict ready for Trainer.
     """
 
-    def __call__(self, features):
+    def __call__(self, features: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         inputs = [f["input_values"] for f in features]
         targets = [f["labels"] for f in features]
 

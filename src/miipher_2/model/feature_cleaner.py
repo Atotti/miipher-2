@@ -1,3 +1,7 @@
+from collections.abc import Callable
+from typing import Any
+
+import torch
 from omegaconf import DictConfig
 from torch import nn
 
@@ -31,7 +35,13 @@ class FeatureCleaner(nn.Module):
             original_forward = blk.forward
             adapter_module = self.adapters[i]
 
-            def patched_forward(x, *args, _orig=original_forward, _ad=adapter_module, **kwargs):
+            def patched_forward(
+                x: torch.Tensor,
+                *args: Any,  # noqa: ANN401
+                _orig: Callable[..., tuple[torch.Tensor, ...]] = original_forward,
+                _ad: ParallelAdapter = adapter_module,
+                **kwargs: Any,  # noqa: ANN401
+            ) -> tuple[torch.Tensor, ...]:
                 original_outputs = _orig(x, *args, **kwargs)
                 hidden_states = original_outputs[0]
                 modified_hidden_states = _ad(hidden_states)
@@ -39,5 +49,5 @@ class FeatureCleaner(nn.Module):
 
             blk.forward = patched_forward
 
-    def forward(self, wav16):
+    def forward(self, wav16: torch.Tensor) -> torch.Tensor:
         return self.extractor(wav16)

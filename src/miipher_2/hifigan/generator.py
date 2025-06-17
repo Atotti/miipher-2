@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from miipher_2.hifigan.modules import ResStack
@@ -67,7 +67,6 @@ class Generator(nn.Module):
         classname = m.__class__.__name__
         if classname.find("Conv") != -1:
             nn.init.normal_(m.weight, 0.0, 0.02)
-
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

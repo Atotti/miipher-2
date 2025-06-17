@@ -15,7 +15,7 @@ from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
 # バッチ内のテンソルの長さを揃える
-def collate_tensors(batch):
+def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
     noisy_tensors, clean_tensors = zip(*batch, strict=False)
 
     noisy_tensors = [x.squeeze(0) for x in noisy_tensors]  # (T)
@@ -50,10 +50,15 @@ def train_adapter(cfg: DictConfig) -> None:
     model = FeatureCleaner(cfg.model).cuda().float()
 
     # ターゲット生成用のクリーンなモデルを別途初期化
-    target_model = HubertExtractor(
-        model_name=cfg.model.hubert_model_name,
-        layer=cfg.model.hubert_layer,
-    ).cuda().float().eval()
+    target_model = (
+        HubertExtractor(
+            model_name=cfg.model.hubert_model_name,
+            layer=cfg.model.hubert_layer,
+        )
+        .cuda()
+        .float()
+        .eval()
+    )
     for param in target_model.parameters():
         param.requires_grad = False
 
@@ -80,7 +85,7 @@ def train_adapter(cfg: DictConfig) -> None:
     it = 0
     for ep in range(cfg.epochs):
         for noisy, clean in dl:
-            noisy, clean = noisy.cuda(), clean.cuda()
+            noisy, clean = noisy.cuda(), clean.cuda()  # noqa: PLW2901
             pred = model(noisy)
             with torch.no_grad():
                 target = target_model(clean)
