@@ -69,7 +69,7 @@ def train_adapter(cfg: DictConfig) -> None:
         betas=tuple(cfg.optim.betas),
     )
 
-    num_training_steps = math.ceil(21 * 1000 / cfg.batch_size) * cfg.epochs
+    num_training_steps = math.ceil(cfg.dataset.num_examples / cfg.batch_size) * cfg.epochs
 
     scheduler = get_scheduler(
         name=cfg.optim.scheduler.name,
