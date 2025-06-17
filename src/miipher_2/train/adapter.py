@@ -12,6 +12,13 @@ import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
 from miipher_2.extractors.hubert import HubertExtractor
 from miipher_2.model.feature_cleaner import FeatureCleaner
+from miipher_2.utils.checkpoint import (
+    get_resume_checkpoint_path,
+    load_checkpoint,
+    restore_random_states,
+    save_checkpoint,
+    setup_wandb_resume,
+)
 
 
 # バッチ内のテンソルの長さを揃える
@@ -27,15 +34,17 @@ def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[tor
 
 
 def train_adapter(cfg: DictConfig) -> None:
-    if cfg.wandb.enabled:
-        wandb.init(
-            project=cfg.wandb.project,
-            entity=cfg.wandb.entity,
-            name=cfg.wandb.name,
-            tags=cfg.wandb.tags,
-            notes=cfg.wandb.notes,
-            config=dict(cfg),
-        )
+    # ---------------- チェックポイント確認と再開 ----------------
+    resume_checkpoint_path = get_resume_checkpoint_path(cfg)
+    resumed_checkpoint = None
+
+    if resume_checkpoint_path:
+        resumed_checkpoint = load_checkpoint(resume_checkpoint_path)
+        restore_random_states(resumed_checkpoint)
+        print(f"[INFO] Resuming from step {resumed_checkpoint['step']}")
+
+    # ---------------- Wandb初期化 ----------------
+    setup_wandb_resume(cfg, resumed_checkpoint)
 
     # ---------------- Data ----------------
     dl = DataLoader(
@@ -78,13 +87,31 @@ def train_adapter(cfg: DictConfig) -> None:
         num_training_steps=num_training_steps,
     )
 
+    # ---------------- チェックポイントから状態復元 ----------------
+    start_epoch = 0
+    start_it = 0
+
+    if resumed_checkpoint:
+        model.load_state_dict(resumed_checkpoint["model_state_dict"])
+        opt.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
+        if "scheduler_state_dict" in resumed_checkpoint:
+            scheduler.load_state_dict(resumed_checkpoint["scheduler_state_dict"])
+        start_it = resumed_checkpoint["step"]
+        start_epoch = resumed_checkpoint.get("epoch", 0)
+        print("[INFO] Restored model, optimizer, and scheduler states")
+
     mae_loss_fn = nn.L1Loss()
     mse_loss_fn = nn.MSELoss()
 
     # ---------------- Train loop ----------------
-    it = 0
-    for ep in range(cfg.epochs):
+    it = start_it
+    for ep in range(start_epoch, cfg.epochs):
         for noisy, clean in dl:
+            # 再開時に既に処理済みのバッチをスキップ
+            if it < start_it:
+                it += 1
+                continue
+
             noisy, clean = noisy.cuda(), clean.cuda()  # noqa: PLW2901
             pred = model(noisy)
             with torch.no_grad():
@@ -105,6 +132,7 @@ def train_adapter(cfg: DictConfig) -> None:
             opt.step()
             scheduler.step()
 
+            # ---------------- ログ出力 ----------------
             if it % cfg.log_interval == 0:
                 log_data = {
                     "epoch": ep + 1,
@@ -126,9 +154,23 @@ def train_adapter(cfg: DictConfig) -> None:
 
                 if cfg.wandb.enabled:
                     wandb.log(log_data, step=it)
+
+            # ---------------- チェックポイント保存 ----------------
+            if hasattr(cfg, "checkpoint") and it > 0 and it % cfg.checkpoint.save_interval == 0:
+                save_checkpoint(
+                    checkpoint_dir=cfg.save_dir,
+                    step=it,
+                    model_state=model.state_dict(),
+                    optimizer_state=opt.state_dict(),
+                    scheduler_state=scheduler.state_dict(),
+                    epoch=ep,
+                    cfg=cfg,
+                    keep_last_n=cfg.checkpoint.keep_last_n,
+                )
+
             it += 1
 
-    # ---------------- Save ----------------
+    # ---------------- 最終モデル保存 ----------------
     sd = pathlib.Path(cfg.save_dir)
     sd.mkdir(parents=True, exist_ok=True)
     model_path = sd / "adapter_final.pt"

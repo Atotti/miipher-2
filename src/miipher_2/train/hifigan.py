@@ -12,6 +12,13 @@ from miipher_2.hifigan.discriminator import MultiPeriodDiscriminator, MultiScale
 from miipher_2.hifigan.generator import Generator
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import save
+from miipher_2.utils.checkpoint import (
+    get_resume_checkpoint_path,
+    load_checkpoint,
+    restore_random_states,
+    save_checkpoint,
+    setup_wandb_resume,
+)
 
 
 # ---------------- util ----------------
@@ -45,20 +52,21 @@ def _load_pretrained(gen: Generator, path: pathlib.Path) -> None:
     print(f"[INFO] pre-trained G loaded: {path}")
 
 
-def train_hifigan(cfg: DictConfig) -> None:
-    if cfg.wandb.enabled:
-        wandb.init(
-            project=cfg.wandb.project,
-            entity=cfg.wandb.entity,
-            name=cfg.wandb.name,
-            tags=cfg.wandb.tags,
-            notes=cfg.wandb.notes,
-            config=dict(cfg),
-        )
+def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
+    # ---------------- チェックポイント確認と再開 ----------------
+    resume_checkpoint_path = get_resume_checkpoint_path(cfg)
+    resumed_checkpoint = None
+
+    if resume_checkpoint_path:
+        resumed_checkpoint = load_checkpoint(resume_checkpoint_path)
+        restore_random_states(resumed_checkpoint)
+        print(f"[INFO] Resuming from step {resumed_checkpoint['step']}")
+
+    # ---------------- Wandb初期化 ----------------
+    setup_wandb_resume(cfg, resumed_checkpoint)
 
     # --- Data
     dl = DataLoader(
-        # 使用するクラスをVocoderDatasetに変更
         VocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
@@ -72,7 +80,10 @@ def train_hifigan(cfg: DictConfig) -> None:
     hubert_dim = cleaner.extractor.hubert.config.hidden_size
 
     gen = _build_gen(cfg, hubert_dim=hubert_dim)
-    _load_pretrained(gen, pathlib.Path(cfg.pretrained_gen))
+    if not resumed_checkpoint:
+        # 新規学習時のみ事前学習済みモデルを読み込み
+        _load_pretrained(gen, pathlib.Path(cfg.pretrained_gen))
+
     mpd, msd = MultiPeriodDiscriminator().cuda(), MultiScaleDiscriminator().cuda()
 
     # --- Optim
@@ -80,8 +91,28 @@ def train_hifigan(cfg: DictConfig) -> None:
     opt_d = optim.AdamW(itertools.chain(mpd.parameters(), msd.parameters()), lr=cfg.lr, betas=tuple(cfg.betas))
     scaler = torch.cuda.amp.GradScaler()
 
+    # ---------------- チェックポイントから状態復元 ----------------
+    start_step = 0
+
+    if resumed_checkpoint:
+        gen.load_state_dict(resumed_checkpoint["model_state_dict"])
+        opt_g.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
+
+        # 追加の状態があれば復元
+        if "mpd_state_dict" in resumed_checkpoint:
+            mpd.load_state_dict(resumed_checkpoint["mpd_state_dict"])
+        if "msd_state_dict" in resumed_checkpoint:
+            msd.load_state_dict(resumed_checkpoint["msd_state_dict"])
+        if "opt_d_state_dict" in resumed_checkpoint:
+            opt_d.load_state_dict(resumed_checkpoint["opt_d_state_dict"])
+        if "scaler_state_dict" in resumed_checkpoint:
+            scaler.load_state_dict(resumed_checkpoint["scaler_state_dict"])
+
+        start_step = resumed_checkpoint["step"]
+        print("[INFO] Restored model and optimizer states")
+
     # --- Loop
-    for step in range(cfg.steps):
+    for step in range(start_step, cfg.steps):
         try:
             noisy_16k, clean_22k = next(dl_iter)
         except StopIteration:
@@ -135,35 +166,43 @@ def train_hifigan(cfg: DictConfig) -> None:
             if cfg.wandb.enabled:
                 wandb.log(log_data, step=step)
 
-        if (step + 1) % cfg.checkpoint_interval == 0:
+        # ---------------- チェックポイント保存 ----------------
+        if hasattr(cfg, "checkpoint") and step > 0 and step % cfg.checkpoint.save_interval == 0:
+            # 音声サンプル保存
             sd = pathlib.Path(cfg.save_dir)
             sd.mkdir(parents=True, exist_ok=True)
-            checkpoint_path = sd / f"g_{(step + 1) // 1000}k.pth"
-            sample_path = sd / f"sample_{step + 1}.wav"
-
-            torch.save(
-                {
-                    "step": step + 1,
-                    "gen": gen.state_dict(),
-                    "opt_g": opt_g.state_dict(),
-                    "mpd": mpd.state_dict(),
-                    "msd": msd.state_dict(),
-                },
-                checkpoint_path,
-            )
+            sample_path = sd / f"sample_{step}.wav"
             save(sample_path, fake_22k[0:1].cpu(), sr=22050)
+
+            # チェックポイント保存
+            additional_states = {
+                "mpd_state_dict": mpd.state_dict(),
+                "msd_state_dict": msd.state_dict(),
+                "opt_d_state_dict": opt_d.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+            }
+
+            checkpoint_path = save_checkpoint(
+                checkpoint_dir=cfg.save_dir,
+                step=step,
+                model_state=gen.state_dict(),
+                optimizer_state=opt_g.state_dict(),
+                additional_states=additional_states,
+                cfg=cfg,
+                keep_last_n=cfg.checkpoint.keep_last_n,
+            )
 
             # Log model checkpoint and audio sample as wandb artifacts
             if cfg.wandb.enabled:
                 # Log model checkpoint
                 if cfg.wandb.log_model:
-                    model_artifact = wandb.Artifact(f"hifigan_checkpoint_{step + 1}", type="model")
-                    model_artifact.add_file(str(checkpoint_path))
+                    model_artifact = wandb.Artifact(f"hifigan_checkpoint_{step}", type="model")
+                    model_artifact.add_file(checkpoint_path)
                     wandb.log_artifact(model_artifact)
 
                 # Log audio sample
                 if cfg.wandb.log_audio:
-                    audio_artifact = wandb.Artifact(f"audio_sample_{step + 1}", type="audio")
+                    audio_artifact = wandb.Artifact(f"audio_sample_{step}", type="audio")
                     audio_artifact.add_file(str(sample_path))
                     wandb.log_artifact(audio_artifact)
 

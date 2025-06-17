@@ -32,7 +32,13 @@ lambda_msd: 2.5
 
 save_dir: exp/hifigan_ft
 log_interval: 1_000     # iter ごとにログ
-checkpoint_interval: 50_000
+
+# Checkpoint configuration
+checkpoint:
+  save_interval: 1000      # 1kステップごとにチェックポイント保存
+  resume_from: null        # 再開用チェックポイントパス
+  keep_last_n: 5          # 最新N個のチェックポイントを保持
+  save_wandb_metadata: true # wandb情報も保存
 
 # Wandb logging configuration
 wandb:
