@@ -13,19 +13,28 @@ class FeatureCleaner(nn.Module):
             layer=cfg_model.hubert_layer,
         )
 
-        # 1. まず、ベースとなるHuBERTの全パラメータを凍結する
+        # 1. ベースとなるHuBERTの全パラメータを凍結
         self.extractor.hubert.eval()
         for param in self.extractor.hubert.parameters():
             param.requires_grad = False
 
-        # 2. その後、学習させたいAdapterをアタッチする
         hubert_dim = self.extractor.hubert.config.hidden_size
 
-        for blk in self.extractor.hubert.encoder.layers:
-            blk.adapter = ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim)
-            original_forward = blk.forward
+        # ===== ここから修正 =====
+        # 2. 指定されたレイヤーの数だけAdapterを作成する
+        #    +1しているのは、0-basedのレイヤーインデックスを数に変換するため
+        num_layers_to_patch = cfg_model.hubert_layer + 1
 
-            def patched_forward(x, *args, _orig=original_forward, _ad=blk.adapter, **kwargs):
+        self.adapters = nn.ModuleList(
+            [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
+        )
+
+        # 3. 指定されたレイヤーまでループして、forwardをパッチする
+        for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
+            original_forward = blk.forward
+            adapter_module = self.adapters[i]
+
+            def patched_forward(x, *args, _orig=original_forward, _ad=adapter_module, **kwargs):
                 original_outputs = _orig(x, *args, **kwargs)
                 hidden_states = original_outputs[0]
                 modified_hidden_states = _ad(hidden_states)

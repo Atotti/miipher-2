@@ -14,9 +14,6 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
 
 class AdapterDataset(IterableDataset):
     """Adapter学習用: 全て16kHzに変換する
-
-    Args:
-        IterableDataset (_type_): _description_
     """
 
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
@@ -24,6 +21,7 @@ class AdapterDataset(IterableDataset):
             wds.WebDataset(
                 pattern,
                 resampled=True,
+                nodesplitter=wds.split_by_node,
             )
             .shuffle(shuffle)
             .decode(wds.torch_audio)
@@ -35,11 +33,9 @@ class AdapterDataset(IterableDataset):
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]
 
-            # === ここから修正 ===
             # ロードした直後に次元数を2Dに統一する
             clean_wav = _ensure_2d(clean_wav)
             noisy_wav = _ensure_2d(noisy_wav)
-            # === ここまで修正 ===
 
             # それぞれの正しいsrを使って16kHzにリサンプリング
             clean_16k = torchaudio.functional.resample(clean_wav, orig_freq=clean_sr, new_freq=self.target_sr)
@@ -66,11 +62,9 @@ class VocoderDataset(IterableDataset):
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]
 
-            # === ここから修正 ===
             # ロードした直後に次元数を2Dに統一する
             clean_wav = _ensure_2d(clean_wav)
             noisy_wav = _ensure_2d(noisy_wav)
-            # === ここまで修正 ===
 
             # 劣化音声はHuBERTに入力するため16kHzにリサンプリング
             noisy_16k = torchaudio.functional.resample(noisy_wav, orig_freq=noisy_sr, new_freq=self.input_sr)

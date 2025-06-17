@@ -18,4 +18,4 @@ class HubertExtractor(torch.nn.Module):
         """
         hs: list[torch.Tensor] = self.hubert(wav, output_hidden_states=True, return_dict=True).hidden_states
         # 指定された層を転置して返す
-        return hs[self.layer].transpose(1, 2).contiguous()
+        return hs[self.layer + 1].transpose(1, 2).contiguous()

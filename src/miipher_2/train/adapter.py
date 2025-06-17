@@ -10,6 +10,7 @@ from transformers import get_scheduler
 
 import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
+from miipher_2.extractors.hubert import HubertExtractor
 from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
@@ -44,15 +45,24 @@ def train_adapter(cfg: DictConfig) -> None:
         pin_memory=cfg.loader.pin_memory,
         collate_fn=collate_tensors,
     )
+
     # ---------------- Model ----------------
-    model = FeatureCleaner(cfg.model).cuda()
+    model = FeatureCleaner(cfg.model).cuda().float()
+
+    # ターゲット生成用のクリーンなモデルを別途初期化
+    target_model = HubertExtractor(
+        model_name=cfg.model.hubert_model_name,
+        layer=cfg.model.hubert_layer,
+    ).cuda().float().eval()
+    for param in target_model.parameters():
+        param.requires_grad = False
+
     opt = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.optim.lr,
         weight_decay=cfg.optim.weight_decay,
         betas=tuple(cfg.optim.betas),
     )
-    scaler = torch.amp.GradScaler("cuda")
 
     num_training_steps = math.ceil(21 * 1000 / cfg.batch_size) * cfg.epochs
 
@@ -71,31 +81,23 @@ def train_adapter(cfg: DictConfig) -> None:
     for ep in range(cfg.epochs):
         for noisy, clean in dl:
             noisy, clean = noisy.cuda(), clean.cuda()
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-                pred = model(noisy)
-                with torch.no_grad():
-                    target = model.extractor(clean)
+            pred = model(noisy)
+            with torch.no_grad():
+                target = target_model(clean)
 
-                min_len = min(pred.size(2), target.size(2))
-                pred = pred[:, :, :min_len]
-                target = target[:, :, :min_len]
+            min_len = min(pred.size(2), target.size(2))
+            pred = pred[:, :, :min_len]
+            target = target[:, :, :min_len]
 
-                mae_loss = mae_loss_fn(pred, target)
-                mse_loss = mse_loss_fn(pred, target)
-                sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
-                loss = mae_loss + mse_loss + sc_loss
-
-            scaler.scale(loss).backward()
-
-            scaler.unscale_(opt)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
-
-            scaler.step(opt)
-            scaler.update()
-
-            scheduler.step()
+            mae_loss = mae_loss_fn(pred, target)
+            mse_loss = mse_loss_fn(pred, target)
+            sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+            loss = mae_loss + mse_loss + sc_loss
 
             opt.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
+            opt.step()
 
             if it % cfg.log_interval == 0:
                 log_data = {

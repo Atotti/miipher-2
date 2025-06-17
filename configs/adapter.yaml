@@ -1,4 +1,3 @@
-# Model configuration
 model:
   hubert_model_name: "rinna/japanese-hubert-large"  # HuBERTベースモデル名
   hubert_layer: 12          # 使用するHuBERTの層（0-based）
@@ -9,6 +8,11 @@ dataset:
   shuffle: 1000          # WebDataset 内部 shuffle バッファ
 batch_size: 8            # GPU1枚あたり
 epochs: 5
+
+training:
+  gradient_accumulation_steps: 1
+  mixed_precision: "no"
+  dataloader_drop_last: true
 
 optim:
   lr: 2.0e-6
@@ -24,7 +28,7 @@ loader:
   pin_memory: true
 
 save_dir: exp/adapter
-log_interval: 100        # iter ごとに損失表示
+log_interval: 10        # iter ごとに損失表示
 
 # Wandb logging configuration
 wandb:
