@@ -98,6 +98,7 @@ def train_adapter(cfg: DictConfig) -> None:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
             opt.step()
+            scheduler.step()
 
             if it % cfg.log_interval == 0:
                 log_data = {
