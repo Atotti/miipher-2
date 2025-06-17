@@ -1,15 +1,27 @@
 import itertools
+import json
 import pathlib
 
 import torch
-from omegaconf import DictConfig
+import torch.nn.functional as F
+from omegaconf import DictConfig, OmegaConf
 from torch import optim
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 
 import wandb
 from miipher_2.data.webdataset_loader import VocoderDataset
-from miipher_2.hifigan.discriminator import MultiPeriodDiscriminator, MultiScaleDiscriminator
-from miipher_2.hifigan.generator import Generator
+from miipher_2.hifigan.meldataset import mel_spectrogram
+
+# 公式HiFi-GANのモデルと損失関数をインポート
+from miipher_2.hifigan.models import (
+    Generator,
+    MultiPeriodDiscriminator,
+    MultiScaleDiscriminator,
+    discriminator_loss,
+    feature_loss,
+    generator_loss,
+)
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import save
 from miipher_2.utils.checkpoint import (
@@ -21,97 +33,120 @@ from miipher_2.utils.checkpoint import (
 )
 
 
-# ---------------- util ----------------
-def _mag(x: torch.Tensor) -> torch.Tensor:
-    return (x[..., 0].square() + x[..., 1].square()).sqrt()
+def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    バッチ内の音声テンソルの長さをパディングして揃える関数
+    """
+    noisy_tensors, clean_tensors = zip(*batch, strict=False)
+
+    # (1, T) -> (T) のように次元を1つ削除
+    noisy_tensors = [x.squeeze(0) for x in noisy_tensors]
+    clean_tensors = [x.squeeze(0) for x in clean_tensors]
+
+    # pad_sequenceで長さを揃え、(B, T_max) のテンソルに変換
+    noisy_padded = pad_sequence(noisy_tensors, batch_first=True)
+    clean_padded = pad_sequence(clean_tensors, batch_first=True)
+
+    return noisy_padded, clean_padded
 
 
-def stft_loss(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    ma = _mag(torch.stft(a, 1024, return_complex=False))
-    mb = _mag(torch.stft(b, 1024, return_complex=False))
-    return (ma - mb).abs().mean()
-
-
-# ---------------- build ----------------
-def _build_gen(cfg: DictConfig, hubert_dim: int) -> Generator:  # hubert_dimを受け取る
-    return Generator(
-        hubert_dim=hubert_dim,
-        upsample_rates=cfg.upsample_rates,
-        upsample_kernel_sizes=cfg.upsample_kernel_sizes,
-    ).cuda()
-
-
-@torch.no_grad()
-def _load_pretrained(gen: Generator, path: pathlib.Path) -> None:
-    state = torch.load(path, map_location="cpu")
-    if "generator" in state:
-        state = state["generator"]
-    if "state_dict" in state:
-        state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
-    gen.load_state_dict(state, strict=False)
-    print(f"[INFO] pre-trained G loaded: {path}")
+# 公式Generatorが要求するAttrDict形式のためのヘルパークラス
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.__dict__ = self
 
 
 def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
     # ---------------- チェックポイント確認と再開 ----------------
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
-
     if resume_checkpoint_path:
         resumed_checkpoint = load_checkpoint(resume_checkpoint_path)
         restore_random_states(resumed_checkpoint)
-        print(f"[INFO] Resuming from step {resumed_checkpoint['step']}")
+        print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
 
     # ---------------- Wandb初期化 ----------------
-    setup_wandb_resume(cfg, resumed_checkpoint)
+    # wandbのIDはチェックポイントから引き継ぐ
+    if resumed_checkpoint and "wandb_run_id" in resumed_checkpoint:
+        wandb_id = resumed_checkpoint["wandb_run_id"]
+        setup_wandb_resume(cfg, resumed_checkpoint)
+    else:
+        wandb.init(
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            name=cfg.wandb.name,
+            config=OmegaConf.to_container(cfg, resolve=True),
+        )
+        wandb_id = wandb.run.id
 
-    # --- Data
+    # --- データローダー ---
+    # VocoderDatasetは(noisy_16k, clean_22k)のタプルを返す
     dl = DataLoader(
         VocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
+        drop_last=True,
+        collate_fn=collate_tensors,
     )
-    dl_iter = iter(dl)
 
-    # --- Models
+    # --- モデルの構築 ---
+    # 1. 特徴量クリーナー (Adapter適用済みHuBERT)
+    # これは学習せず、特徴量抽出にのみ使用する
     cleaner = FeatureCleaner(cfg.model).cuda().eval()
-    cleaner.load_state_dict(torch.load(cfg.adapter_ckpt, map_location="cpu"))
+    adapter_checkpoint = torch.load(cfg.adapter_ckpt, map_location="cpu", weights_only=False)
+    cleaner.load_state_dict(adapter_checkpoint["model_state_dict"])
+    for param in cleaner.parameters():
+        param.requires_grad = False
+
+    # 2. 公式HiFi-GANモデル
+    # Generatorは公式の設定ファイル(config.json)を元にAttrDictを作成して渡す
+    with open(pathlib.Path(cfg.pretrained_gen).parent / "config.json") as f:
+        h_dict = json.load(f)
+    h = AttrDict(h_dict)
+
+    # miipher-2のprenetと公式Generatorを接続
+    # まずは、HuBERT特徴量をメルスペクトログラム風(80次元)に変換するprenet
+    from miipher_2.hifigan.prenet import MHubertToMel
+
     hubert_dim = cleaner.extractor.hubert.config.hidden_size
+    prenet = MHubertToMel(hubert_dim).cuda()
 
-    gen = _build_gen(cfg, hubert_dim=hubert_dim)
-    if not resumed_checkpoint:
-        # 新規学習時のみ事前学習済みモデルを読み込み
-        _load_pretrained(gen, pathlib.Path(cfg.pretrained_gen))
+    # 次に公式Generator
+    generator = Generator(h).cuda()
 
-    mpd, msd = MultiPeriodDiscriminator().cuda(), MultiScaleDiscriminator().cuda()
+    # Discriminators
+    mpd = MultiPeriodDiscriminator().cuda()
+    msd = MultiScaleDiscriminator().cuda()
 
-    # --- Optim
-    opt_g = optim.AdamW(gen.parameters(), lr=cfg.lr, betas=tuple(cfg.betas))
-    opt_d = optim.AdamW(itertools.chain(mpd.parameters(), msd.parameters()), lr=cfg.lr, betas=tuple(cfg.betas))
-    scaler = torch.cuda.amp.GradScaler()
+    # --- 最適化アルゴリズム ---
+    # prenetとgeneratorのパラメータを一緒に最適化
+    optim_g = optim.AdamW(
+        itertools.chain(prenet.parameters(), generator.parameters()), lr=cfg.lr, betas=tuple(cfg.betas)
+    )
+    optim_d = optim.AdamW(itertools.chain(mpd.parameters(), msd.parameters()), lr=cfg.lr, betas=tuple(cfg.betas))
 
-    # ---------------- チェックポイントから状態復元 ----------------
+    # --- 事前学習済み重みとチェックポイントの読み込み ---
     start_step = 0
-
     if resumed_checkpoint:
-        gen.load_state_dict(resumed_checkpoint["model_state_dict"])
-        opt_g.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
+        # チェックポイントから再開
+        prenet.load_state_dict(resumed_checkpoint["prenet"])
+        generator.load_state_dict(resumed_checkpoint["generator"])
+        mpd.load_state_dict(resumed_checkpoint["mpd"])
+        msd.load_state_dict(resumed_checkpoint["msd"])
+        optim_g.load_state_dict(resumed_checkpoint["optim_g"])
+        optim_d.load_state_dict(resumed_checkpoint["optim_d"])
+        start_step = resumed_checkpoint["steps"] + 1
+        print("[INFO] Restored model and optimizer states from miipher-2 checkpoint.")
+    else:
+        # 新規学習時は公式の事前学習済み重みを読み込む
+        state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu")
+        generator.load_state_dict(state_dict_g["generator"])
+        print(f"[INFO] Loaded pre-trained Generator from: {cfg.pretrained_gen}")
 
-        # 追加の状態があれば復元
-        if "mpd_state_dict" in resumed_checkpoint:
-            mpd.load_state_dict(resumed_checkpoint["mpd_state_dict"])
-        if "msd_state_dict" in resumed_checkpoint:
-            msd.load_state_dict(resumed_checkpoint["msd_state_dict"])
-        if "opt_d_state_dict" in resumed_checkpoint:
-            opt_d.load_state_dict(resumed_checkpoint["opt_d_state_dict"])
-        if "scaler_state_dict" in resumed_checkpoint:
-            scaler.load_state_dict(resumed_checkpoint["scaler_state_dict"])
-
-        start_step = resumed_checkpoint["step"]
-        print("[INFO] Restored model and optimizer states")
-
-    # --- Loop
+    # --- 学習ループ ---
+    dl_iter = iter(dl)
     for step in range(start_step, cfg.steps):
         try:
             noisy_16k, clean_22k = next(dl_iter)
@@ -120,94 +155,115 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             noisy_16k, clean_22k = next(dl_iter)
 
         noisy_16k, clean_22k = noisy_16k.cuda(), clean_22k.cuda()
+        # (B, 1, T)の形式に
+        if clean_22k.dim() == 2:
+            clean_22k = clean_22k.unsqueeze(1)
 
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        # --- Generatorの学習 ---
+        optim_g.zero_grad()
+
+        # HuBERT特徴量抽出
+        with torch.no_grad():
             feat = cleaner(noisy_16k)
-            fake_22k = gen(feat)
-            l_stft = stft_loss(fake_22k, clean_22k)
 
-        # ---- D
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            d_real = [d(clean_22k) for d in (mpd, msd)]
-            d_fake = [d(fake_22k.detach()) for d in (mpd, msd)]
-            l_d = sum(
-                (r[0] - 1).square().mean() + f[0].square().mean()
-                for r, f in zip(itertools.chain(*d_real), itertools.chain(*d_fake), strict=False)
-            )
+        # 音声生成
+        y_g_hat = prenet(feat)
+        y_g_hat = generator(y_g_hat)
 
-        scaler.scale(l_d).backward()
-        scaler.step(opt_d)
-        scaler.update()
-        opt_d.zero_grad(set_to_none=True)
+        # Mel-Spectrogram Loss
+        min_len = min(clean_22k.size(2), y_g_hat.size(2))
+        clean_22k = clean_22k[:, :, :min_len]
+        y_g_hat = y_g_hat[:, :, :min_len]
+        # 公式実装に合わせて教師データからメルスペクトログラムを計算
+        y_mel = mel_spectrogram(
+            clean_22k.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
+        y_g_hat_mel = mel_spectrogram(
+            y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
 
-        # ---- G
-        with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-            g_adv = sum((f[0] - 1).square().mean() for f in itertools.chain(mpd(fake_22k), msd(fake_22k)))
-            l_g = cfg.lambda_stft * l_stft + cfg.lambda_mpd * g_adv / 2 + cfg.lambda_msd * g_adv / 2
+        loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
 
-        scaler.scale(l_g).backward()
-        scaler.step(opt_g)
-        scaler.update()
-        opt_g.zero_grad(set_to_none=True)
+        # GAN Loss
+        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k, y_g_hat)
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k, y_g_hat)
 
-        # ---- log / save
+        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        loss_gen_f, _ = generator_loss(y_df_hat_g)
+        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+
+        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+
+        loss_gen_all.backward()
+        optim_g.step()
+
+        # --- Discriminatorの学習 ---
+        optim_d.zero_grad()
+
+        y_g_hat_detached = y_g_hat.detach()
+
+        # MPD
+        y_df_hat_r, y_df_hat_g, _, _ = mpd(clean_22k, y_g_hat_detached)
+        loss_disc_f, _, _ = discriminator_loss(y_df_hat_r, y_df_hat_g)
+
+        # MSD
+        y_ds_hat_r, y_ds_hat_g, _, _ = msd(clean_22k, y_g_hat_detached)
+        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+
+        loss_disc_all = loss_disc_s + loss_disc_f
+        loss_disc_all.backward()
+        optim_d.step()
+
+        # ---- ログ出力とチェックポイント保存 ----
         if (step % cfg.log_interval) == 0:
             log_data = {
                 "step": step,
-                "loss/generator": l_g.item(),
-                "loss/discriminator": l_d.item(),
-                "loss/stft": l_stft.item(),
-                "loss/adversarial": g_adv.item(),
-                "learning_rate": opt_g.param_groups[0]["lr"],
+                "loss/generator_total": loss_gen_all.item(),
+                "loss/generator_adv": (loss_gen_s + loss_gen_f).item(),
+                "loss/feature_matching": (loss_fm_s + loss_fm_f).item(),
+                "loss/mel_l1": loss_mel.item(),
+                "loss/discriminator_total": loss_disc_all.item(),
+                "learning_rate": optim_g.param_groups[0]["lr"],
             }
-
-            print(f"[G] step {step:>6}/{cfg.steps}  L_STFT:{l_stft:.3f}  L_adv:{g_adv:.3f}")
-
+            print(
+                f"[Step {step:>7d}/{cfg.steps}] Gen_Loss: {loss_gen_all.item():.4f}, Disc_Loss: {loss_disc_all.item():.4f}"
+            )
             if cfg.wandb.enabled:
                 wandb.log(log_data, step=step)
 
-        # ---------------- チェックポイント保存 ----------------
         if hasattr(cfg, "checkpoint") and step > 0 and step % cfg.checkpoint.save_interval == 0:
-            # 音声サンプル保存
-            sd = pathlib.Path(cfg.save_dir)
-            sd.mkdir(parents=True, exist_ok=True)
-            sample_path = sd / f"sample_{step}.wav"
-            save(sample_path, fake_22k[0:1].cpu(), sr=22050)
-
             # チェックポイント保存
-            additional_states = {
-                "mpd_state_dict": mpd.state_dict(),
-                "msd_state_dict": msd.state_dict(),
-                "opt_d_state_dict": opt_d.state_dict(),
-                "scaler_state_dict": scaler.state_dict(),
-            }
+            checkpoint_dir = pathlib.Path(cfg.save_dir)
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
             checkpoint_path = save_checkpoint(
-                checkpoint_dir=cfg.save_dir,
+                checkpoint_dir=str(checkpoint_dir),
                 step=step,
-                model_state=gen.state_dict(),
-                optimizer_state=opt_g.state_dict(),
-                additional_states=additional_states,
+                model_state=None,  # ここでは使わない
+                optimizer_state=None,  # ここでは使わない
+                additional_states={
+                    "prenet": prenet.state_dict(),
+                    "generator": generator.state_dict(),
+                    "mpd": mpd.state_dict(),
+                    "msd": msd.state_dict(),
+                    "optim_g": optim_g.state_dict(),
+                    "optim_d": optim_d.state_dict(),
+                    "steps": step,
+                    "config": OmegaConf.to_container(cfg, resolve=True),
+                    "wandb_run_id": wandb_id,
+                },
                 cfg=cfg,
                 keep_last_n=cfg.checkpoint.keep_last_n,
             )
 
-            # Log model checkpoint and audio sample as wandb artifacts
-            if cfg.wandb.enabled:
-                # Log model checkpoint
-                if cfg.wandb.log_model:
-                    model_artifact = wandb.Artifact(f"hifigan_checkpoint_{step}", type="model")
-                    model_artifact.add_file(checkpoint_path)
-                    wandb.log_artifact(model_artifact)
-
-                # Log audio sample
-                if cfg.wandb.log_audio:
-                    audio_artifact = wandb.Artifact(f"audio_sample_{step}", type="audio")
-                    audio_artifact.add_file(str(sample_path))
-                    wandb.log_artifact(audio_artifact)
-
-                    # Also log audio directly to wandb
-                    wandb.log({"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=22050)}, step=step)
+            # 音声サンプルをログ
+            if cfg.wandb.enabled and cfg.wandb.log_audio:
+                sample_path = checkpoint_dir / f"sample_{step}.wav"
+                save(sample_path, y_g_hat[0:1].cpu().detach(), sr=h.sampling_rate)
+                wandb.log(
+                    {"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)}, step=step
+                )
 
     if cfg.wandb.enabled:
         wandb.finish()
