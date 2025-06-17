@@ -12,7 +12,7 @@ class Generator(nn.Module):
     def __init__(
         self,
         hubert_dim: int,
-        in_channels: int = 80,  # Prenetからの出力次元数に合わせて修正
+        in_channels: int = 80,
         channels: int = 512,
         out_channels: int = 1,
         kernel_size: int = 7,
@@ -23,13 +23,13 @@ class Generator(nn.Module):
     ) -> None:
         super().__init__()
 
-        # --- Prenet: 768→80 ch, 50 Hz→86.13Hz -----------------
+        # Prenet
         self.prenet = MHubertToMel(hubert_dim=hubert_dim)
 
-        # --- Initial conv -------------------------------------
+        # Initial conv
         self.pre_conv = nn.Conv1d(in_channels, channels, kernel_size, 1, padding=(kernel_size - 1) // 2)
 
-        # --- Upsample layers ----------------------------------
+        # Upsample layers
         self.ups = nn.ModuleList()
         self.resblocks = nn.ModuleList()
 
@@ -47,7 +47,7 @@ class Generator(nn.Module):
             for _ in range(3):  # three ResBlocks per stage
                 self.resblocks.append(ResStack(channels // (2 ** (i + 1))))
 
-        # --- Final layers -------------------------------------
+        # Final layers
         self.post_conv = nn.Sequential(
             nn.LeakyReLU(0.1, True),
             nn.Conv1d(
@@ -62,20 +62,19 @@ class Generator(nn.Module):
 
         self.apply(self._weight_init)
 
-    # ----------------------------------------------------------
     @staticmethod
     def _weight_init(m: nn.Module) -> None:
         classname = m.__class__.__name__
         if classname.find("Conv") != -1:
             nn.init.normal_(m.weight, 0.0, 0.02)
 
-    # ----------------------------------------------------------
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x : (B, 768, T50)  — mHuBERT features
+            x : (B, 768, T50)  — HuBERT features
         Returns:
-            wav : (B, 1, T_wave)  — 16 kHz waveform
+            wav : (B, 1, T_wave)  — 16 kHz waveform
         """
         x = self.prenet(x)  # (B,128,T200)
         x = self.pre_conv(x)  # (B,512,T200)

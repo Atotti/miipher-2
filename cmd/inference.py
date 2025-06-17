@@ -1,7 +1,7 @@
 import argparse
 import pathlib
 
-from miipher_2.infer import main as infer_main
+from miipher_2.utils.infer import main as infer_main
 
 
 def parse():

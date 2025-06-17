@@ -13,23 +13,20 @@ class FeatureCleaner(nn.Module):
             layer=cfg_model.hubert_layer,
         )
 
-        # 1. ベースとなるHuBERTの全パラメータを凍結
+        # ベースとなるHuBERTの全パラメータを凍結
         self.extractor.hubert.eval()
         for param in self.extractor.hubert.parameters():
             param.requires_grad = False
 
         hubert_dim = self.extractor.hubert.config.hidden_size
 
-        # ===== ここから修正 =====
-        # 2. 指定されたレイヤーの数だけAdapterを作成する
-        #    +1しているのは、0-basedのレイヤーインデックスを数に変換するため
         num_layers_to_patch = cfg_model.hubert_layer + 1
 
         self.adapters = nn.ModuleList(
             [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
         )
 
-        # 3. 指定されたレイヤーまでループして、forwardをパッチする
+        # 指定されたレイヤーまでループして、forwardをパッチする
         for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
             original_forward = blk.forward
             adapter_module = self.adapters[i]
