@@ -15,20 +15,20 @@ training:
   dataloader_drop_last: true
 
 optim:
-  lr: 2.0e-6
+  lr: 2.0e-4
   weight_decay: 0.01
   betas: [0.9, 0.95]
   max_grad_norm: 1.0
   scheduler:
     name: "linear"
-    warmup_steps: 4000
+    warmup_steps: 1000
 
 loader:
   num_workers: 8
   pin_memory: true
 
 save_dir: exp/adapter
-log_interval: 10        # iter ごとに損失表示
+log_interval: 100        # iter ごとに損失表示
 
 # Wandb logging configuration
 wandb:
