@@ -1,0 +1,53 @@
+model:
+  hubert_model_name: "rinna/japanese-hubert-large"
+  hubert_layer: 12
+  adapter_hidden_dim: 1024
+
+dataset:
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
+  val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
+  shuffle: 1000
+batch_size: 1
+loader:
+  num_workers: 8
+  pin_memory: true
+
+adapter_ckpt: exp/adapter_layer_12/checkpoint_60k.pt
+pretrained_gen: exp/hifigan_pretrain_layer_12/checkpoint_23k.pt
+
+# ----- Generator アーキテクチャ -----
+upsample_rates:        [8, 8, 2, 2]
+upsample_kernel_sizes: [16, 16, 4, 4]
+resblock_kernel_sizes: [3, 7, 11]
+resblock_dilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+
+# ----- 学習ハイパーパラメータ -----
+steps: 200000
+validation_interval: 1000
+validation_batches: 25
+lr: 2.0e-5
+betas: [0.9, 0.95]
+lambda_stft: 1.0
+lambda_mpd: 2.5
+lambda_msd: 2.5
+
+save_dir: exp/hifigan_ft_layer_12
+log_interval: 100     # iter ごとにログ
+
+# Checkpoint configuration
+checkpoint:
+  save_interval: 1000
+  resume_from: null        # 再開用チェックポイントパス
+  keep_last_n: 500          # 最新N個のチェックポイントを保持
+  save_wandb_metadata: true # wandb情報も保存
+
+# Wandb logging configuration
+wandb:
+  enabled: true
+  project: "miipher-2-hifigan-finetune"
+  entity: null             # デフォルトのwandbエンティティを使用
+  name: null               # 実行名を自動生成
+  tags: ["hifigan", "vocoder", "finetune"]
+  notes: "HiFi-GAN fine-tuning for Miipher-2"
+  log_model: true
+  log_audio: true          # 音声サンプルをログ

@@ -31,19 +31,19 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ### Parallel Adapter
 
 ```bash
-uv run cmd/train_adapter.py --config-name adapter
+uv run cmd/train_adapter.py --config-name adapter_layer_12
 ```
 
 ### HiFi‑GAN Pre-train
 
 ```bash
-uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain
+uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_12
 ```
 
 ### HiFi‑GAN fine‑tune
 
 ```bash
-uv run cmd/finetune_vocoder.py --config-name hifigan_finetune
+uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_12
 ```
 
 ### 学習の再開
@@ -51,13 +51,13 @@ uv run cmd/finetune_vocoder.py --config-name hifigan_finetune
 特定のチェックポイントから再開
 ```bash
 # Adapter学習の再開
-uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter/checkpoint_5k.pt"
+uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_12/checkpoint_5k.pt"
 
 # HiFi-GAN pretrainの再開
-uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain/checkpoint_5k.pt"
+uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain_layer_12/checkpoint_5k.pt"
 
 # HiFi-GAN finetuneの再開
-uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft/checkpoint_10k.pt"
+uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft_layer_12/checkpoint_10k.pt"
 ```
 ※明示的に指定しない限り、checkpoint作成時のconfigが継承される
 

@@ -1,6 +1,6 @@
 model:
   hubert_model_name: "rinna/japanese-hubert-large"  # HuBERTベースモデル名
-  hubert_layer: 12          # 使用するHuBERTの層（0-based）
+  hubert_layer: 6          # 使用するHuBERTの層（0-based）
   adapter_hidden_dim: 1024  # Adapterの中間層の次元数
 
 dataset:
@@ -30,7 +30,7 @@ loader:
   num_workers: 8
   pin_memory: true
 
-save_dir: exp/adapter
+save_dir: exp/adapter_layer_6
 log_interval: 100        # iter ごとに損失表示
 
 # Checkpoint configuration

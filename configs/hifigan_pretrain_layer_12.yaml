@@ -36,7 +36,7 @@ lambda_mpd: 2.5
 lambda_msd: 2.5
 
 # チェックポイントの保存先を事前学習用に変更
-save_dir: exp/hifigan_pretrain
+save_dir: exp/hifigan_pretrain_layer_12
 log_interval: 100
 
 # Checkpoint configuration
