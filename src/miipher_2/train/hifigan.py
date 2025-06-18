@@ -260,7 +260,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             # 音声サンプルをログ
             if cfg.wandb.enabled and cfg.wandb.log_audio:
                 sample_path = checkpoint_dir / f"sample_{step}.wav"
-                save(sample_path, y_g_hat[0:1].cpu().detach(), sr=h.sampling_rate)
+                save(sample_path, y_g_hat[0:1].squeeze(0).cpu().detach(), sr=h.sampling_rate)
                 wandb.log(
                     {"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)}, step=step
                 )
