@@ -36,7 +36,7 @@ def validate(model: nn.Module, target_model: nn.Module, val_dl: DataLoader, loss
     total_count = 0
 
     for noisy, clean in val_dl:
-        noisy, clean = noisy.cuda(), clean.cuda()
+        noisy, clean = noisy.cuda(), clean.cuda()  # noqa: PLW2901
 
         target = target_model(clean)
         pred = model(noisy)
