@@ -35,7 +35,7 @@ log_interval: 100        # iter ごとに損失表示
 checkpoint:
   save_interval: 1000      # 1kステップごとにチェックポイント保存
   resume_from: null        # 再開用チェックポイントパス
-  keep_last_n: 5          # 最新N個のチェックポイントを保持
+  keep_last_n: 500          # 最新N個のチェックポイントを保持
   save_wandb_metadata: true # wandb情報も保存
 
 # Wandb logging configuration

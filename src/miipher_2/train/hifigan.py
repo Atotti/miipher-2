@@ -140,10 +140,11 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
         start_step = resumed_checkpoint["steps"] + 1
         print("[INFO] Restored model and optimizer states from miipher-2 checkpoint.")
     else:
-        # 新規学習時は公式の事前学習済み重みを読み込む
-        state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu")
-        generator.load_state_dict(state_dict_g["generator"])
-        print(f"[INFO] Loaded pre-trained Generator from: {cfg.pretrained_gen}")
+        # 新規学習時はステージ1で事前学習したモデルを読み込む
+        pretrain_ckpt = torch.load(cfg.pretrained_gen, map_location="cpu")
+        prenet.load_state_dict(pretrain_ckpt["prenet"])
+        generator.load_state_dict(pretrain_ckpt["generator"])
+        print(f"[INFO] Loaded pre-trained vocoder (prenet & generator) from: {cfg.pretrained_gen}")
 
     # --- 学習ループ ---
     dl_iter = iter(dl)

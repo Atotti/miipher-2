@@ -78,3 +78,31 @@ class VocoderDataset(IterableDataset):
 
             # .mean(0, keepdim=True)はステレオ音声をモノラルに変換する安全策として残しておく
             yield noisy_16k.mean(0, keepdim=True), clean_22k.mean(0, keepdim=True)
+
+class CleanVocoderDataset(IterableDataset):
+    """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力"""
+
+    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
+        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+        self.input_sr = 16000
+        self.target_sr = 22050
+
+    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        for sample in self.dataset:
+            # noisy_speech.wav の代わりに speech.wav を使う
+            clean_wav, clean_sr = sample["speech.wav"]
+
+            # ロードした直後に次元数を2Dに統一する
+            clean_wav = _ensure_2d(clean_wav)
+
+            # HuBERTに入力するため16kHzにリサンプリング
+            clean_16k = torchaudio.functional.resample(clean_wav, orig_freq=clean_sr, new_freq=self.input_sr)
+
+            # 教師信号なので22.05kHzのまま
+            if clean_sr != self.target_sr:
+                clean_22k = torchaudio.functional.resample(clean_wav, orig_freq=clean_sr, new_freq=self.target_sr)
+            else:
+                clean_22k = clean_wav
+
+            # .mean(0, keepdim=True)はステレオ音声をモノラルに変換する安全策
+            yield clean_16k.mean(0, keepdim=True), clean_22k.mean(0, keepdim=True)
