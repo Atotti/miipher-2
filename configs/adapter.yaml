@@ -44,6 +44,6 @@ wandb:
   project: "miipher-2-adapter"
   entity: null             # デフォルトのwandbエンティティを使用
   name: null               # 実行名を自動生成
-  tags: ["adapter", "training"]
+  tags: ["hubert", "adapter", "training"]
   notes: "Parallel Adapter training for Miipher-2"
   log_model: false

@@ -180,19 +180,25 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         optim_d.step()
 
         if (step % cfg.log_interval) == 0:
+            log_data = {
+                "pretrain/loss/generator_total": loss_gen_all.item(),
+                "pretrain/loss/generator_adv": (loss_gen_s + loss_gen_f).item(),
+                "pretrain/loss/feature_matching": (loss_fm_s + loss_fm_f).item(),
+                "pretrain/loss/mel_l1": loss_mel.item(),
+                "pretrain/loss/discriminator_total": loss_disc_all.item(),
+                "pretrain/learning_rate": optim_g.param_groups[0]["lr"],
+            }
+
+            # コンソールの表示も更新
             print(
-                f"[Pre-train Step {step:>7d}/{cfg.steps}] \
-                Gen_Loss: {loss_gen_all.item():.4f}, Disc_Loss: {loss_disc_all.item():.4f}"
+                f"[Pre-train Step {step:>7d}/{cfg.steps}] "
+                f"Gen_Loss: {log_data['pretrain/loss/generator_total']:.4f}, "
+                f"Disc_Loss: {log_data['pretrain/loss/discriminator_total']:.4f}"
             )
+
+            # 詳細な辞書をWandBに記録
             if cfg.wandb.enabled:
-                wandb.log(
-                    {
-                        "step": step,
-                        "pretrain/loss_gen": loss_gen_all.item(),
-                        "pretrain/loss_disc": loss_disc_all.item(),
-                    },
-                    step=step,
-                )
+                wandb.log(log_data, step=step)
 
         if hasattr(cfg, "checkpoint") and step > 0 and step % cfg.checkpoint.save_interval == 0:
             checkpoint_dir = pathlib.Path(cfg.save_dir)
@@ -201,7 +207,7 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
                 checkpoint_dir=str(checkpoint_dir),
                 step=step,
                 model_state={},
-                optimizer_state={},  # prenet と generator は後で分けて保存
+                optimizer_state={},
                 additional_states={
                     "prenet": prenet.state_dict(),
                     "generator": generator.state_dict(),
@@ -216,5 +222,13 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
                 cfg=cfg,
                 keep_last_n=cfg.checkpoint.keep_last_n,
             )
+            # 音声サンプルをログ
+            if cfg.wandb.enabled and cfg.wandb.log_audio:
+                sample_path = checkpoint_dir / f"sample_{step}.wav"
+                save(sample_path, y_g_hat[0:1].squeeze(0).cpu().detach(), sr=h.sampling_rate)
+                wandb.log(
+                    {"pretrain/audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)},
+                    step=step,
+                )
     if cfg.wandb.enabled:
         wandb.finish()
