@@ -34,13 +34,11 @@ def dynamic_range_decompression_torch(x, C=1):
 
 
 def spectral_normalize_torch(magnitudes):
-    output = dynamic_range_compression_torch(magnitudes)
-    return output
+    return dynamic_range_compression_torch(magnitudes)
 
 
 def spectral_de_normalize_torch(magnitudes):
-    output = dynamic_range_decompression_torch(magnitudes)
-    return output
+    return dynamic_range_decompression_torch(magnitudes)
 
 
 mel_basis = {}
@@ -80,9 +78,8 @@ def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin,
     spec = torch.sqrt(spec.pow(2).sum(-1) + (1e-9))
 
     spec = torch.matmul(mel_basis[str(fmax) + "_" + str(y.device)], spec)
-    spec = spectral_normalize_torch(spec)
+    return spectral_normalize_torch(spec)
 
-    return spec
 
 
 def get_dataset_filelist(a):
@@ -117,7 +114,7 @@ class MelDataset(torch.utils.data.Dataset):
         fmax_loss=None,
         fine_tuning=False,
         base_mels_path=None,
-    ):
+    ) -> None:
         self.audio_files = training_files
         random.seed(1234)
         if shuffle:
@@ -148,7 +145,8 @@ class MelDataset(torch.utils.data.Dataset):
                 audio = normalize(audio) * 0.95
             self.cached_wav = audio
             if sampling_rate != self.sampling_rate:
-                raise ValueError(f"{sampling_rate} SR doesn't match target {self.sampling_rate} SR")
+                msg = f"{sampling_rate} SR doesn't match target {self.sampling_rate} SR"
+                raise ValueError(msg)
             self._cache_ref_count = self.n_cache_reuse
         else:
             audio = self.cached_wav
@@ -209,5 +207,5 @@ class MelDataset(torch.utils.data.Dataset):
 
         return (mel.squeeze(), audio.squeeze(0), filename, mel_loss.squeeze())
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.audio_files)

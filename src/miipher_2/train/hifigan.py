@@ -3,7 +3,7 @@ import json
 import pathlib
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from omegaconf import DictConfig, OmegaConf
 from torch import optim
 from torch.nn.utils.rnn import pad_sequence
@@ -12,8 +12,6 @@ from torch.utils.data import DataLoader
 import wandb
 from miipher_2.data.webdataset_loader import VocoderDataset
 from miipher_2.hifigan.meldataset import mel_spectrogram
-
-# 公式HiFi-GANのモデルと損失関数をインポート
 from miipher_2.hifigan.models import (
     Generator,
     MultiPeriodDiscriminator,
@@ -102,7 +100,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
 
     # 2. 公式HiFi-GANモデル
     # Generatorは公式の設定ファイル(config.json)を元にAttrDictを作成して渡す
-    with open(pathlib.Path(cfg.pretrained_gen).parent / "config.json") as f:
+    with (pathlib.Path(cfg.pretrained_gen).parent / "config.json").open() as f:
         h_dict = json.load(f)
     h = AttrDict(h_dict)
 
@@ -238,11 +236,11 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             checkpoint_dir = pathlib.Path(cfg.save_dir)
             checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-            checkpoint_path = save_checkpoint(
+            _checkpoint_path = save_checkpoint(
                 checkpoint_dir=str(checkpoint_dir),
                 step=step,
-                model_state=None,  # ここでは使わない
-                optimizer_state=None,  # ここでは使わない
+                model_state={}, # generatorとprenetの情報は後でadditional_statesに保存
+                optimizer_state={},
                 additional_states={
                     "prenet": prenet.state_dict(),
                     "generator": generator.state_dict(),
@@ -261,7 +259,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             # 音声サンプルをログ
             if cfg.wandb.enabled and cfg.wandb.log_audio:
                 sample_path = checkpoint_dir / f"sample_{step}.wav"
-                save(sample_path, y_g_hat[0:1].cpu().detach(), sr=h.sampling_rate)
+                save(sample_path, y_g_hat[0:1].squeeze(0).cpu().detach(), sr=h.sampling_rate)
                 wandb.log(
                     {"audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)}, step=step
                 )
