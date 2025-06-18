@@ -81,7 +81,6 @@ def mel_spectrogram(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin,
     return spectral_normalize_torch(spec)
 
 
-
 def get_dataset_filelist(a):
     with open(a.input_training_file, encoding="utf-8") as fi:
         training_files = [
