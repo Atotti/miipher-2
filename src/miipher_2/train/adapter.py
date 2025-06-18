@@ -29,6 +29,37 @@ def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[tor
     return noisy, clean
 
 
+@torch.no_grad()
+def validate(model: nn.Module, target_model: nn.Module, val_dl: DataLoader, loss_fns: dict) -> dict:
+    model.eval()
+    total_losses = {"total": 0.0, "mae": 0.0, "mse": 0.0, "sc": 0.0}
+    total_count = 0
+
+    for noisy, clean in val_dl:
+        noisy, clean = noisy.cuda(), clean.cuda()
+
+        target = target_model(clean)
+        pred = model(noisy)
+
+        min_len = min(pred.size(2), target.size(2))
+        pred, target = pred[:, :, :min_len], target[:, :, :min_len]
+
+        mae_loss = loss_fns["mae"](pred, target)
+        mse_loss = loss_fns["mse"](pred, target)
+        sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+        loss = mae_loss + mse_loss + sc_loss
+
+        total_losses["total"] += loss.item() * noisy.size(0)
+        total_losses["mae"] += mae_loss.item() * noisy.size(0)
+        total_losses["mse"] += mse_loss.item() * noisy.size(0)
+        total_losses["sc"] += sc_loss.item() * noisy.size(0)
+        total_count += noisy.size(0)
+
+    avg_losses = {key: val / total_count for key, val in total_losses.items()}
+    model.train()
+    return avg_losses
+
+
 def train_adapter(cfg: DictConfig) -> None:
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
@@ -46,6 +77,15 @@ def train_adapter(cfg: DictConfig) -> None:
         pin_memory=cfg.loader.pin_memory,
         collate_fn=collate_tensors,
         drop_last=True,
+    )
+
+    val_dl = DataLoader(
+        AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False),  # シャッフルは不要
+        batch_size=cfg.batch_size,
+        num_workers=cfg.loader.num_workers,
+        pin_memory=cfg.loader.pin_memory,
+        collate_fn=collate_tensors,
+        drop_last=False,
     )
 
     model = FeatureCleaner(cfg.model).cuda().float()
@@ -89,11 +129,14 @@ def train_adapter(cfg: DictConfig) -> None:
     mae_loss_fn = nn.L1Loss()
     mse_loss_fn = nn.MSELoss()
 
-    # データローダーを無限イテレータ化
     dl_iter = iter(dl)
 
-    # エポックベースのループをステップベースに変更
     for it in range(start_it, cfg.steps):
+        if it > 0 and it % cfg.validation_interval == 0:
+            val_losses = validate(model, target_model, val_dl, {"mae": mae_loss_fn, "mse": mse_loss_fn})
+            wandb.log({f"val_loss/{key}": val for key, val in val_losses.items()}, step=it)
+            print(f"[Adapter] it:{it:>7} | Validation Loss: {val_losses['total']:.4f}")
+
         try:
             noisy, clean = next(dl_iter)
         except StopIteration:
