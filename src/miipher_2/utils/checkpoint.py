@@ -16,7 +16,6 @@ def save_checkpoint(
     model_state: dict[str, Any],
     optimizer_state: dict[str, Any],
     scheduler_state: dict[str, Any] | None = None,
-    epoch: int | None = None,
     additional_states: dict[str, Any] | None = None,
     cfg: DictConfig | None = None,
     keep_last_n: int = 5,
@@ -30,7 +29,6 @@ def save_checkpoint(
         model_state: モデルの状態辞書
         optimizer_state: オプティマイザの状態辞書
         scheduler_state: スケジューラの状態辞書
-        epoch: エポック数
         additional_states: 追加の状態辞書
         cfg: 設定
         keep_last_n: 保持するチェックポイント数
@@ -54,9 +52,6 @@ def save_checkpoint(
 
     if scheduler_state is not None:
         checkpoint_data["scheduler_state_dict"] = scheduler_state
-
-    if epoch is not None:
-        checkpoint_data["epoch"] = epoch
 
     if additional_states is not None:
         checkpoint_data.update(additional_states)
@@ -130,8 +125,7 @@ def validate_config_compatibility(checkpoint_config: dict[str, Any], current_con
         "optim.lr",
         "batch_size",
         "dataset.num_examples",
-        "epochs",
-        "steps",  # HiFi-GAN用
+        "steps",
     ]
 
     warnings = []

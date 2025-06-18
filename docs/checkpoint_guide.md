@@ -99,7 +99,6 @@ bash scripts/auto_resume_hifigan.sh
 ```python
 {
     'step': 5000,                           # 現在のステップ数
-    'epoch': 2,                             # 現在のエポック数
     'model_state_dict': {...},              # モデルの状態
     'optimizer_state_dict': {...},          # オプティマイザの状態
     'scheduler_state_dict': {...},          # スケジューラの状態
@@ -161,7 +160,6 @@ These changes may affect training consistency.
 - `optim.lr`: 学習率
 - `batch_size`: バッチサイズ
 - `dataset.num_examples`: データセット例数
-- `epochs`: エポック数
 - `steps`: ステップ数（HiFi-GAN）
 
 ## ファイル管理
