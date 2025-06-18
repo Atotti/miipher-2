@@ -48,6 +48,93 @@ class AttrDict(dict):
         self.__dict__ = self
 
 
+@torch.no_grad()
+def validate(
+    h: AttrDict,
+    hubert_extractor: torch.nn.Module,
+    prenet: torch.nn.Module,
+    generator: torch.nn.Module,
+    mpd: torch.nn.Module,
+    msd: torch.nn.Module,
+    val_dl: DataLoader,
+    limit_batches: int | None = None,
+) -> dict:
+    """HiFi-GAN Pre-training Validation"""
+    hubert_extractor.eval()
+    prenet.eval()
+    generator.eval()
+    mpd.eval()
+    msd.eval()
+
+    total_losses = {
+        "generator_total": 0.0,
+        "discriminator_total": 0.0,
+        "mel_l1": 0.0,
+        "feature_matching": 0.0,
+        "generator_adv": 0.0,
+    }
+    total_count = 0
+
+    for i, (clean_16k, clean_22k) in enumerate(val_dl):
+        if limit_batches is not None and i >= limit_batches:
+            break
+        clean_16k, clean_22k = clean_16k.cuda(), clean_22k.cuda()
+        if clean_22k.dim() == 2:
+            clean_22k = clean_22k.unsqueeze(1)
+
+        # Feature extraction and generation from CLEAN audio
+        feat = hubert_extractor(clean_16k)
+        y_g_hat_prenet = prenet(feat)
+        y_g_hat = generator(y_g_hat_prenet)
+
+        # Align length
+        min_len = min(clean_22k.size(2), y_g_hat.size(2))
+        clean_22k = clean_22k[:, :, :min_len]
+        y_g_hat = y_g_hat[:, :, :min_len]
+
+        # Mel L1 loss
+        y_mel = mel_spectrogram(
+            clean_22k.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
+        y_g_hat_mel = mel_spectrogram(
+            y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
+        loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
+
+        # GAN Loss
+        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k, y_g_hat)
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k, y_g_hat)
+
+        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        loss_gen_f, _ = generator_loss(y_df_hat_g)
+        loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+
+        loss_disc_f, _, _ = discriminator_loss(y_df_hat_r, y_df_hat_g)
+        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        loss_disc_all = loss_disc_s + loss_disc_f
+
+        # Accumulate losses
+        batch_size = clean_16k.size(0)
+        total_losses["generator_total"] += loss_gen_all.item() * batch_size
+        total_losses["discriminator_total"] += loss_disc_all.item() * batch_size
+        total_losses["mel_l1"] += loss_mel.item() * batch_size
+        total_losses["feature_matching"] += (loss_fm_s + loss_fm_f).item() * batch_size
+        total_losses["generator_adv"] += (loss_gen_s + loss_gen_f).item() * batch_size
+        total_count += batch_size
+
+    avg_losses = {f"pretrain/val_loss/{key}": val / total_count for key, val in total_losses.items()}
+
+    # Set models back to train mode, except for the frozen extractor
+    prenet.train()
+    generator.train()
+    mpd.train()
+    msd.train()
+
+    return avg_losses
+
+
 def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
@@ -75,6 +162,15 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
         drop_last=True,
+        collate_fn=collate_tensors,
+    )
+
+    val_dl = DataLoader(
+        CleanVocoderDataset(cfg.dataset.val_path_pattern, shuffle=False),
+        batch_size=cfg.batch_size,
+        num_workers=cfg.loader.num_workers,
+        pin_memory=cfg.loader.pin_memory,
+        drop_last=False,
         collate_fn=collate_tensors,
     )
 
@@ -126,6 +222,17 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     # --- 学習ループ ---
     dl_iter = iter(dl)
     for step in range(start_step, cfg.steps):
+        if hasattr(cfg, "validation_interval") and step > 0 and step % cfg.validation_interval == 0:
+            val_losses = validate(
+                h, hubert_extractor, prenet, generator, mpd, msd, val_dl, limit_batches=cfg.get("validation_batches")
+            )
+            if cfg.wandb.enabled:
+                wandb.log(val_losses, step=step)
+            print(
+                f"[Pre-train Step {step:>7d}/{cfg.steps}] "
+                f"Val Gen Loss: {val_losses['pretrain/val_loss/generator_total']:.4f}, "
+                f"Val Disc Loss: {val_losses['pretrain/val_loss/discriminator_total']:.4f}"
+            )
         try:
             clean_16k, clean_22k = next(dl_iter)
         except StopIteration:

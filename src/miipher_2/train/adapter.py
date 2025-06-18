@@ -30,12 +30,16 @@ def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[tor
 
 
 @torch.no_grad()
-def validate(model: nn.Module, target_model: nn.Module, val_dl: DataLoader, loss_fns: dict) -> dict:
+def validate(
+    model: nn.Module, target_model: nn.Module, val_dl: DataLoader, loss_fns: dict, limit_batches: int | None = None
+) -> dict:
     model.eval()
     total_losses = {"total": 0.0, "mae": 0.0, "mse": 0.0, "sc": 0.0}
     total_count = 0
 
-    for noisy, clean in val_dl:
+    for i, (noisy, clean) in enumerate(val_dl):
+        if limit_batches is not None and i >= limit_batches:
+            break
         noisy, clean = noisy.cuda(), clean.cuda()  # noqa: PLW2901
 
         target = target_model(clean)
@@ -133,7 +137,13 @@ def train_adapter(cfg: DictConfig) -> None:
 
     for it in range(start_it, cfg.steps):
         if it > 0 and it % cfg.validation_interval == 0:
-            val_losses = validate(model, target_model, val_dl, {"mae": mae_loss_fn, "mse": mse_loss_fn})
+            val_losses = validate(
+                model,
+                target_model,
+                val_dl,
+                {"mae": mae_loss_fn, "mse": mse_loss_fn},
+                limit_batches=cfg.get("validation_batches"),
+            )
             wandb.log({f"val_loss/{key}": val for key, val in val_losses.items()}, step=it)
             print(f"[Adapter] it:{it:>7} | Validation Loss: {val_losses['total']:.4f}")
 
