@@ -106,7 +106,7 @@ def load_checkpoint(checkpoint_path: str) -> dict[str, Any]:
         raise FileNotFoundError(msg)
 
     try:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
         print(f"[INFO] Checkpoint loaded: {checkpoint_path}")
         return checkpoint  # noqa: TRY300
     except Exception as e:
@@ -278,23 +278,17 @@ def find_latest_checkpoint(checkpoint_dir: str) -> Path | None:
 def get_resume_checkpoint_path(cfg: DictConfig) -> Path | None:
     """
     再開用チェックポイントパスを取得する
-
-    Args:
-        cfg: 設定
-
-    Returns:
-        チェックポイントパス
+    コマンドライン引数で`checkpoint.resume_from`が指定された場合のみパスを返す
     """
     if hasattr(cfg, "checkpoint") and cfg.checkpoint.resume_from:
-        checkpoint_path = cfg.checkpoint.resume_from
-        if Path(checkpoint_path).exists():
+        checkpoint_path = Path(cfg.checkpoint.resume_from)
+        if checkpoint_path.exists():
+            print(f"[INFO] Resuming from specified checkpoint: {checkpoint_path}")
             return checkpoint_path
-        print(f"[WARNING] Specified checkpoint not found: {checkpoint_path}")
 
-    # 最新のチェックポイントを自動検索
-    latest_checkpoint = find_latest_checkpoint(cfg.save_dir)
-    if latest_checkpoint:
-        print(f"[INFO] Found latest checkpoint: {latest_checkpoint}")
-        return latest_checkpoint
+        # 指定されたファイルが見つからない場合は、警告ではなくエラーを発生させて処理を停止
+        msg = f"Checkpoint specified in `resume_from` not found: {checkpoint_path}"
+        raise FileNotFoundError(msg)
 
+    # `resume_from`が指定されていない場合は、常にNoneを返し、新規学習を開始する
     return None

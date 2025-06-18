@@ -53,7 +53,10 @@ uv run cmd/finetune_vocoder.py --config-name hifigan_finetune
 # Adapter学習の再開
 uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter/checkpoint_5k.pt"
 
-# HiFi-GAN学習の再開
+# HiFi-GAN pretrainの再開
+uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain/checkpoint_5k.pt"
+
+# HiFi-GAN finetuneの再開
 uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft/checkpoint_10k.pt"
 ```
 ※明示的に指定しない限り、checkpoint作成時のconfigが継承される
