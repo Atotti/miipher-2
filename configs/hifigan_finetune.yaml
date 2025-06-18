@@ -33,7 +33,7 @@ log_interval: 10     # iter ごとにログ
 
 # Checkpoint configuration
 checkpoint:
-  save_interval: 1000      # 1kステップごとにチェックポイント保存
+  save_interval: 1000
   resume_from: null        # 再開用チェックポイントパス
   keep_last_n: 500          # 最新N個のチェックポイントを保持
   save_wandb_metadata: true # wandb情報も保存
