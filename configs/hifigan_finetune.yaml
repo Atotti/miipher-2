@@ -15,10 +15,8 @@ adapter_ckpt: exp/adapter/checkpoint_6k.pt
 pretrained_gen: exp/hifigan_pretrain/checkpoint_100k.pt
 
 # ----- Generator アーキテクチャ -----
-upsample_rates:        [8, 8, 2, 2] # 8*8*2*2 = 256
+upsample_rates:        [8, 8, 2, 2]
 upsample_kernel_sizes: [16, 16, 4, 4]
-# UNIVERSAL_V1はresblockのカーネルサイズとdilationも固定されています
-# generator.py側で固定されている場合は不要ですが、念のため記載します
 resblock_kernel_sizes: [3, 7, 11]
 resblock_dilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
 
@@ -43,7 +41,7 @@ checkpoint:
 # Wandb logging configuration
 wandb:
   enabled: true
-  project: "miipher-2-hifigan"
+  project: "miipher-2-hifigan-finetune"
   entity: null             # デフォルトのwandbエンティティを使用
   name: null               # 実行名を自動生成
   tags: ["hifigan", "vocoder", "finetune"]

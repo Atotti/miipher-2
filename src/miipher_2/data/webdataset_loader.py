@@ -79,6 +79,7 @@ class VocoderDataset(IterableDataset):
             # .mean(0, keepdim=True)はステレオ音声をモノラルに変換する安全策として残しておく
             yield noisy_16k.mean(0, keepdim=True), clean_22k.mean(0, keepdim=True)
 
+
 class CleanVocoderDataset(IterableDataset):
     """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力"""
 

@@ -33,12 +33,12 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ```bash
 uv run cmd/train_adapter.py --config-name adapter
 ```
-### ### HiFi‑GAN Pre-train
+
+### HiFi‑GAN Pre-train
 
 ```bash
 uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain
 ```
-
 
 ### HiFi‑GAN fine‑tune
 

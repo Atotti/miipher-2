@@ -239,7 +239,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             _checkpoint_path = save_checkpoint(
                 checkpoint_dir=str(checkpoint_dir),
                 step=step,
-                model_state={}, # generatorとprenetの情報は後でadditional_statesに保存
+                model_state={},  # generatorとprenetの情報は後でadditional_statesに保存
                 optimizer_state={},
                 additional_states={
                     "prenet": prenet.state_dict(),
