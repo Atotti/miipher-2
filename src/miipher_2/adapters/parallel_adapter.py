@@ -19,4 +19,4 @@ class ParallelAdapter(nn.Module):
                     nn.init.zeros_(m.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # (B, T, C)
-        return x + self.ff(x)
+        return self.ff(x)
