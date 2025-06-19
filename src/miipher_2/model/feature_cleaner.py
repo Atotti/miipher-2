@@ -30,24 +30,30 @@ class FeatureCleaner(nn.Module):
             [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
         )
 
-        # 指定されたレイヤーまでループして、forwardをパッチする
         for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
-            original_forward = blk.forward
+            original_ff_forward = blk.feed_forward.forward
             adapter_module = self.adapters[i]
 
+            # blk.feed_forward.forward を置き換えるための新しい関数を定義
             def patched_forward(
-                x: torch.Tensor,
-                *args: Any,  # noqa: ANN401
-                _orig: Callable[..., tuple[torch.Tensor, ...]] = original_forward,
+                hidden_states: torch.Tensor,
+                _orig_ff: Callable = original_ff_forward,
                 _ad: ParallelAdapter = adapter_module,
-                **kwargs: Any,  # noqa: ANN401
-            ) -> tuple[torch.Tensor, ...]:
-                original_outputs = _orig(x, *args, **kwargs)
-                hidden_states = original_outputs[0]
-                modified_hidden_states = _ad(hidden_states)
-                return (modified_hidden_states,) + original_outputs[1:]
+            ) -> torch.Tensor:
+                # 元のFeedForward(MLP)の出力を計算
+                ff_output = _orig_ff(hidden_states)
 
-            blk.forward = patched_forward
+                # 同じ入力からAdapterの出力を計算
+                adapter_output = _ad(hidden_states)
+
+                # 元のMLP出力にアダプターの出力を加算する
+                return ff_output + adapter_output
+
+            # feed_forwardモジュールのforwardメソッドを新しい関数で上書き
+            blk.feed_forward.forward = patched_forward
+
+            for param in blk.final_layer_norm.parameters():
+                param.requires_grad = True
 
     def forward(self, wav16: torch.Tensor) -> torch.Tensor:
         return self.extractor(wav16)
