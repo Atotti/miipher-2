@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
@@ -22,6 +24,9 @@ class MHubertToMel(nn.Module):
         # フレームレートを変換するためのスケールファクター
         self.scale_factor = TARGET_FRAME_RATE / MHUBERT_FRAME_RATE
 
+        # より正確な時間軸変換のための制御
+        self.use_precise_resampling = True
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -32,5 +37,33 @@ class MHubertToMel(nn.Module):
         # 次元数を射影
         x = self.proj(x)
 
-        # 時間軸を線形補間でリサンプリング
-        return F.interpolate(x, scale_factor=self.scale_factor, mode="linear", align_corners=False)
+        if self.use_precise_resampling:
+            # より正確な時間軸リサンプリング（long sequences対応）
+            # exact target lengthを計算してsize指定でリサンプリング
+            input_length = x.size(-1)
+            target_length = int(math.ceil(input_length * self.scale_factor))
+            return F.interpolate(x, size=target_length, mode="linear", align_corners=False)
+        else:
+            # 従来の scale_factor 方式（non-integer ratioで drift する可能性）
+            return F.interpolate(x, scale_factor=self.scale_factor, mode="linear", align_corners=False)
+
+
+class SincResampler(nn.Module):
+    """
+    バンド制限付きSinc補間によるリサンプリング（実験用）
+    長尺音声での位相ドリフトを最小化
+    """
+    def __init__(self, input_sr: float, output_sr: float, lowpass_filter_width: int = 6):
+        super().__init__()
+        self.resampling_ratio = output_sr / input_sr
+        self.lowpass_filter_width = lowpass_filter_width
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Sinc補間による高品質リサンプリング
+        """
+        # PyTorchの実装では複雑になるため、現在は線形補間のfallback
+        # 実際の実装ではtorchaudio.functionalのresampleを使用することを推奨
+        input_length = x.size(-1)
+        target_length = int(math.ceil(input_length * self.resampling_ratio))
+        return F.interpolate(x, size=target_length, mode="linear", align_corners=False)

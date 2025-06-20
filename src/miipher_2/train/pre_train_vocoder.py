@@ -153,8 +153,16 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     print_main(accelerator, f"Mixed precision: {accelerator.mixed_precision}")
 
     # データセットとデータローダー
-    train_dataset = CleanVocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
-    val_dataset = CleanVocoderDataset(cfg.dataset.val_path_pattern, shuffle=False)
+    train_dataset = CleanVocoderDataset(
+        cfg.dataset.path_pattern,
+        shuffle=cfg.dataset.shuffle,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
+    val_dataset = CleanVocoderDataset(
+        cfg.dataset.val_path_pattern,
+        shuffle=False,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
 
     train_dl = DataLoader(
         train_dataset,

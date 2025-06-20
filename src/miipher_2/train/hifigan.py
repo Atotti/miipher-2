@@ -144,6 +144,7 @@ def validate(
     generator.train()
     mpd.train()
     msd.train()
+    # Note: cleaner stays in eval mode since it's frozen and used for feature extraction
 
     return avg_losses
 
@@ -159,8 +160,16 @@ def train_hifigan(cfg: DictConfig) -> None:
     setup_random_seeds(accelerator, cfg.get("seed", 42))
 
     # データローダーの準備
-    train_ds = VocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
-    val_ds = VocoderDataset(cfg.dataset.val_path_pattern, shuffle=False)
+    train_ds = VocoderDataset(
+        cfg.dataset.path_pattern,
+        shuffle=cfg.dataset.shuffle,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
+    val_ds = VocoderDataset(
+        cfg.dataset.val_path_pattern,
+        shuffle=False,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
 
     train_dl = DataLoader(
         train_ds,

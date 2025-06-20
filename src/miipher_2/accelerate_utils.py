@@ -1,10 +1,27 @@
 import os
+import random
 from typing import Any
 
+import numpy as np
+import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.tracking import WandBTracker
 from omegaconf import DictConfig, OmegaConf
+
+
+def worker_init_fn(worker_id: int, seed: int = 42) -> None:
+    """
+    DataLoaderワーカーの乱数シードを設定する関数
+
+    Args:
+        worker_id: ワーカーID
+        seed: ベースシード
+    """
+    worker_seed = seed + worker_id
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
 
 
 def build_accelerator(cfg: DictConfig) -> tuple[Accelerator, Any]:

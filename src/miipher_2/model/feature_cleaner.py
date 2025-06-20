@@ -1,4 +1,5 @@
 from collections.abc import Callable
+import functools
 from typing import Any
 
 import torch
@@ -30,28 +31,33 @@ class FeatureCleaner(nn.Module):
             [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
         )
 
+        # Adapterパッチ適用（DDP/FSDP対応版）
         for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
-            original_ff_forward = blk.feed_forward.forward
             adapter_module = self.adapters[i]
 
-            # blk.feed_forward.forward を置き換えるための新しい関数を定義
+            # 動的に元のforward関数を取得する関数（バウンドメソッド問題を回避）
             def patched_forward(
                 hidden_states: torch.Tensor,
-                _orig_ff: Callable = original_ff_forward,
-                _ad: ParallelAdapter = adapter_module,
+                layer_idx: int = i,
+                adapter_mod: ParallelAdapter = adapter_module,
             ) -> torch.Tensor:
+                # 毎回動的に元のforwardを取得（DDP/FSDPで置き換わっても対応）
+                original_ff = self.extractor.hubert.encoder.layers[layer_idx].feed_forward
+
                 # 元のFeedForward(MLP)の出力を計算
-                ff_output = _orig_ff(hidden_states)
+                # original_ffはモジュールなので、__call__を使用
+                ff_output = original_ff(hidden_states)
 
                 # 同じ入力からAdapterの出力を計算
-                adapter_output = _ad(hidden_states)
+                adapter_output = adapter_mod(hidden_states)
 
                 # 元のMLP出力にアダプターの出力を加算する
                 return ff_output + adapter_output
 
             # feed_forwardモジュールのforwardメソッドを新しい関数で上書き
-            blk.feed_forward.forward = patched_forward
+            blk.feed_forward.forward = functools.partial(patched_forward, layer_idx=i, adapter_mod=adapter_module)
 
+            # LayerNormのパラメータは学習可能にする
             for param in blk.final_layer_norm.parameters():
                 param.requires_grad = True
 

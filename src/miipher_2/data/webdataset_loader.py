@@ -15,21 +15,31 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
 
 
 class AdapterDataset(IterableDataset):
-    """Adapter学習用: 全て16kHzに変換する"""
+    """Adapter学習用: 全て16kHzに変換する（マルチノード対応）"""
 
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
+    def __init__(self, pattern: str, shuffle: int = 1000, num_workers: int = 0) -> None:
+        # 複数ノード対応のため、nodesplitterとshardsplitterを使用
         self.dataset = (
             wds.WebDataset(
                 pattern,
                 resampled=True,
-                nodesplitter=wds.split_by_node,
+                nodesplitter=wds.split_by_node,  # ノード間でのシャード分割
+                shardsplitter=wds.split_by_worker,  # ワーカー間でのシャード分割
             )
             .shuffle(shuffle)
             .decode(wds.torch_audio)
         )
         self.target_sr = 16000
+        self.num_workers = num_workers
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        # マルチワーカー環境での重複を避ける
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None and self.num_workers > 1:
+            # ワーカーごとに異なるシードを設定（再現性維持）
+            worker_seed = torch.initial_seed() + worker_info.id
+            torch.manual_seed(worker_seed)
+
         for sample in self.dataset:
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]
@@ -47,18 +57,31 @@ class AdapterDataset(IterableDataset):
 
 
 class VocoderDataset(IterableDataset):
-    """Vocoder学習用: 劣化音声は16kHz、クリーン音声は22.05kHzで出力
+    """Vocoder学習用: 劣化音声は16kHz、クリーン音声は22.05kHzで出力（マルチノード対応）"""
 
-    Args:
-        IterableDataset (_type_): _description_
-    """
-
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+    def __init__(self, pattern: str, shuffle: int = 1000, num_workers: int = 0) -> None:
+        self.dataset = (
+            wds.WebDataset(
+                pattern,
+                resampled=True,
+                nodesplitter=wds.split_by_node,  # ノード間でのシャード分割
+                shardsplitter=wds.split_by_worker,  # ワーカー間でのシャード分割
+            )
+            .shuffle(shuffle)
+            .decode(wds.torch_audio)
+        )
         self.input_sr = 16000
         self.target_sr = 22050
+        self.num_workers = num_workers
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        # マルチワーカー環境での重複を避ける
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None and self.num_workers > 1:
+            # ワーカーごとに異なるシードを設定（再現性維持）
+            worker_seed = torch.initial_seed() + worker_info.id
+            torch.manual_seed(worker_seed)
+
         for sample in self.dataset:
             clean_wav, clean_sr = sample["speech.wav"]
             noisy_wav, noisy_sr = sample["degraded_speech.wav"]
@@ -81,14 +104,31 @@ class VocoderDataset(IterableDataset):
 
 
 class CleanVocoderDataset(IterableDataset):
-    """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力"""
+    """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力（マルチノード対応）"""
 
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+    def __init__(self, pattern: str, shuffle: int = 1000, num_workers: int = 0) -> None:
+        self.dataset = (
+            wds.WebDataset(
+                pattern,
+                resampled=True,
+                nodesplitter=wds.split_by_node,  # ノード間でのシャード分割
+                shardsplitter=wds.split_by_worker,  # ワーカー間でのシャード分割
+            )
+            .shuffle(shuffle)
+            .decode(wds.torch_audio)
+        )
         self.input_sr = 16000
         self.target_sr = 22050
+        self.num_workers = num_workers
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+        # マルチワーカー環境での重複を避ける
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None and self.num_workers > 1:
+            # ワーカーごとに異なるシードを設定（再現性維持）
+            worker_seed = torch.initial_seed() + worker_info.id
+            torch.manual_seed(worker_seed)
+
         for sample in self.dataset:
             # noisy_speech.wav の代わりに speech.wav を使う
             clean_wav, clean_sr = sample["speech.wav"]

@@ -8,7 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import get_scheduler
 
-from miipher_2.accelerate_utils import build_accelerator, log_metrics, print_main, setup_random_seeds
+from miipher_2.accelerate_utils import build_accelerator, log_metrics, print_main, setup_random_seeds, worker_init_fn
 from miipher_2.data.webdataset_loader import AdapterDataset
 from miipher_2.extractors.hubert import HubertExtractor
 from miipher_2.model.feature_cleaner import FeatureCleaner
@@ -82,9 +82,19 @@ def train_adapter(cfg: DictConfig) -> None:
     # 乱数シードの設定
     setup_random_seeds(accelerator, cfg.get("seed", 42))
 
-    # データローダーの準備
-    train_ds = AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
-    val_ds = AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False)
+    # データローダーの準備（再現性向上）
+    from functools import partial
+
+    train_ds = AdapterDataset(
+        cfg.dataset.path_pattern,
+        shuffle=cfg.dataset.shuffle,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
+    val_ds = AdapterDataset(
+        cfg.dataset.val_path_pattern,
+        shuffle=False,
+        num_workers=cfg.loader.num_workers  # マルチワーカー対応
+    )
 
     train_dl = DataLoader(
         train_ds,
@@ -93,6 +103,7 @@ def train_adapter(cfg: DictConfig) -> None:
         pin_memory=cfg.loader.pin_memory,
         collate_fn=collate_tensors,
         drop_last=True,
+        worker_init_fn=partial(worker_init_fn, seed=cfg.get("seed", 42)),  # 再現性向上
     )
 
     val_dl = DataLoader(
@@ -102,18 +113,28 @@ def train_adapter(cfg: DictConfig) -> None:
         pin_memory=cfg.loader.pin_memory,
         collate_fn=collate_tensors,
         drop_last=False,
+        worker_init_fn=partial(worker_init_fn, seed=cfg.get("seed", 42)),  # 再現性向上
     )
 
-    # モデルの準備
-    model = FeatureCleaner(cfg.model).float()
-    target_model = HubertExtractor(
+    # モデルの準備（HuBERT重複ロード回避）
+    # 共有HuBERTエクストラクターを作成（メモリ効率化）
+    shared_extractor = HubertExtractor(
         model_name=cfg.model.hubert_model_name,
         layer=cfg.model.hubert_layer,
     ).float().eval()
 
-    # target_modelの勾配を無効化
-    for param in target_model.parameters():
+    # 共有エクストラクターの勾配を無効化
+    for param in shared_extractor.parameters():
         param.requires_grad = False
+
+    # FeatureCleanerは内部でHuBERTを作成するが、共有エクストラクターを使用するよう修正
+    model = FeatureCleaner(cfg.model).float()
+
+    # FeatureCleanerの内部HuBERTを共有エクストラクターで置き換え（メモリ節約）
+    model.extractor = shared_extractor
+
+    # target_modelは共有エクストラクターを直接使用
+    target_model = shared_extractor
 
     # オプティマイザーとスケジューラーの準備
     opt = optim.AdamW(
@@ -145,12 +166,17 @@ def train_adapter(cfg: DictConfig) -> None:
     checkpoint_dir = pathlib.Path(cfg.save_dir)
     if (checkpoint_dir / "pytorch_model.bin").exists():
         print_main(accelerator, f"Loading checkpoint from {checkpoint_dir}")
-        accelerator.load_state(checkpoint_dir)
-        # ステップ数の復元（必要に応じてファイルから読み込み）
-        step_file = checkpoint_dir / "step.txt"
-        if step_file.exists():
-            start_step = int(step_file.read_text()) + 1
-            print_main(accelerator, f"Resuming from step {start_step}")
+        try:
+            accelerator.load_state(checkpoint_dir)
+            # ステップ数の復元（必要に応じてファイルから読み込み）
+            step_file = checkpoint_dir / "step.txt"
+            if step_file.exists():
+                start_step = int(step_file.read_text()) + 1
+                print_main(accelerator, f"Resuming from step {start_step}")
+        except Exception as e:
+            print_main(accelerator, f"Failed to load checkpoint from {checkpoint_dir}: {e}")
+            print_main(accelerator, "Starting training from scratch")
+            start_step = 0
 
     # データローダーのイテレーター作成
     train_iter = iter(train_dl)
@@ -191,10 +217,16 @@ def train_adapter(cfg: DictConfig) -> None:
                 pred = pred[:, :, :min_len]
                 target = target[:, :, :min_len]
 
-                # 損失の計算
+                # 損失の計算（サンプル長正規化改善）
                 mae_loss = mae_loss_fn(pred, target)
                 mse_loss = mse_loss_fn(pred, target)
-                sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+
+                # Spectral Convergence Loss: サンプル長で正規化
+                pred_power = pred.pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の平均パワー
+                target_power = target.pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の平均パワー
+                diff_power = (pred - target).pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の差分パワー
+                sc_loss = (diff_power / (target_power + 1e-9)).mean()  # バッチ全体の平均
+
                 loss = mae_loss + mse_loss + sc_loss
 
             # 逆伝播と最適化
