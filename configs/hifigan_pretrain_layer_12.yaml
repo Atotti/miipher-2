@@ -8,7 +8,7 @@ dataset:
   val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
   shuffle: 1000
 
-batch_size: 2
+batch_size: 1
 loader:
   num_workers: 8
   pin_memory: true

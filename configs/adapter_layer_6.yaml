@@ -13,7 +13,7 @@ validation_interval: 1000
 validation_batches: 25
 
 training:
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 2
   mixed_precision: "no"
   dataloader_drop_last: true
 
