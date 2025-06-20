@@ -11,11 +11,13 @@ batch_size: 8
 steps: 60000
 validation_interval: 1000
 validation_batches: 25
+seed: 42  # 乱数シード
 
+# Accelerate training configuration
 training:
   gradient_accumulation_steps: 2
-  mixed_precision: "no"
-  dataloader_drop_last: true
+  mixed_precision: "fp16"      # "no" / "fp16" / "bf16" - AccelerateでAMP使用
+  force_cpu: false             # CPUに強制する場合のみtrue
 
 optim:
   lr: 2.0e-4
@@ -40,12 +42,22 @@ checkpoint:
   keep_last_n: 500          # 最新N個のチェックポイントを保持
   save_wandb_metadata: true # wandb情報も保存
 
-# Wandb logging configuration
+# Wandb logging configuration (Accelerateトラッカー使用)
 wandb:
   enabled: true
   project: "miipher-2-adapter"
   entity: null             # デフォルトのwandbエンティティを使用
   name: null               # 実行名を自動生成
-  tags: ["hubert", "adapter", "training"]
-  notes: "Parallel Adapter training for Miipher-2"
+  tags: ["hubert", "adapter", "training", "accelerate"]
+  notes: "Accelerate-based Parallel Adapter training for Miipher-2"
   log_model: false
+  log_audio: false         # 音声サンプルをログするかどうか
+  id: null                 # 固定IDで再開する場合のWandB run ID
+
+# Accelerate固有設定
+accelerate:
+  fsdp: null               # FSDP設定（大規模モデルの場合）
+  deepspeed: null          # DeepSpeed設定
+  dataloader_config:
+    split_batches: false   # バッチを分割するかどうか
+    dispatch_batches: null # バッチのディスパッチ方法

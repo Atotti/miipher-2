@@ -1,25 +1,28 @@
+defaults:
+  - override /hydra/launcher: joblib
+
 model:
-  hubert_model_name: "rinna/japanese-hubert-large"
+  hubert_model_name: "facebook/hubert-base-ls960"
   hubert_layer: 6
   adapter_hidden_dim: null # 事前学習ではAdapterは使用しない
 
 dataset:
-  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
-  val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
-  shuffle: 1000
+  path_pattern: "/workspace/dataset/hubert_kenlm_clean_train/{000000..000004}.tar"
+  val_path_pattern: "/workspace/dataset/hubert_kenlm_clean_valid/{000000..000001}.tar"
+  shuffle: true
 
-batch_size: 1
+batch_size: 16
 loader:
-  num_workers: 8
+  num_workers: 2
   pin_memory: true
 
-gradient_accumulation_steps: 8
+gradient_accumulation_steps: 1
 
 # 事前学習では学習済みAdapterは不要
 adapter_ckpt: null
 
 # 公式の事前学習済みモデルをベースに学習する
-pretrained_gen: assets/universal_hifigan_v1/g_02500000
+pretrained_gen: "/workspace/models/hifigan_base_config/generator_pretrained"
 
 # ----- Generator アーキテクチャ -----
 upsample_rates:        [8, 8, 2, 2]
@@ -29,32 +32,55 @@ resblock_dilations: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
 
 # ----- 学習ハイパーパラメータ -----
 steps: 100000
-validation_interval: 1000
-validation_batches: 25
-lr: 2.0e-5
-betas: [0.9, 0.95]
+validation_interval: 5000
+validation_batches: 50
+lr: 2e-4
+betas: [0.8, 0.99]
+seed: 42
 lambda_stft: 1.0 # 不要かも
 lambda_mpd: 2.5
 lambda_msd: 2.5
 
 # チェックポイントの保存先を事前学習用に変更
-save_dir: exp/hifigan_pretrain_layer_6
+save_dir: "/workspace/outputs/hifigan_pretrain_layer_6"
 log_interval: 100
 
 # Checkpoint configuration
 checkpoint:
-  save_interval: 1000
+  save_interval: 10000
   resume_from: null
-  keep_last_n: 500
+  keep_last_n: 5
   save_wandb_metadata: true
 
 # Wandb logging configuration
 wandb:
   enabled: true
-  project: "miipher-2-hifigan-pretrain"
-  entity: null
-  name: null
+  project: "miipher-2"
+  entity: "your_wandb_entity"
+  name: "hifigan_pretrain_layer_6"
   tags: ["hifigan", "vocoder", "pretrain"]
   notes: "HiFi-GAN pre-training on clean HuBERT features"
   log_model: true
   log_audio: true
+
+# Accelerate training settings
+training:
+  mixed_precision: "fp16"
+  force_cpu: false
+  gradient_accumulation_steps: ${gradient_accumulation_steps}
+
+# Accelerate configuration options
+accelerate:
+  # FSDP (Fully Sharded Data Parallel) settings
+  fsdp:
+    enabled: false
+    min_num_params: 0
+    transformer_layer_cls_to_wrap: ""
+    backward_prefetch: "backward_pre"
+    forward_prefetch: false
+    use_orig_params: true
+
+  # DeepSpeed settings
+  deepspeed:
+    enabled: false
+    config_file: null

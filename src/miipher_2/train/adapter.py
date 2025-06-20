@@ -1,4 +1,5 @@
 import pathlib
+from typing import Any
 
 import torch
 from omegaconf import DictConfig
@@ -7,17 +8,10 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from transformers import get_scheduler
 
-import wandb
+from miipher_2.accelerate_utils import build_accelerator, log_metrics, print_main, setup_random_seeds
 from miipher_2.data.webdataset_loader import AdapterDataset
 from miipher_2.extractors.hubert import HubertExtractor
 from miipher_2.model.feature_cleaner import FeatureCleaner
-from miipher_2.utils.checkpoint import (
-    get_resume_checkpoint_path,
-    load_checkpoint,
-    restore_random_states,
-    save_checkpoint,
-    setup_wandb_resume,
-)
 
 
 def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
@@ -31,51 +25,69 @@ def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[tor
 
 @torch.no_grad()
 def validate(
-    model: nn.Module, target_model: nn.Module, val_dl: DataLoader, loss_fns: dict, limit_batches: int | None = None
-) -> dict:
+    model: nn.Module,
+    target_model: nn.Module,
+    val_dl: DataLoader,
+    loss_fns: dict[str, nn.Module],
+    accelerator: Any,
+    cfg: DictConfig,
+) -> dict[str, float]:
+    """
+    Adapter検証関数（Accelerate対応版）
+    """
     model.eval()
     total_losses = {"total": 0.0, "mae": 0.0, "mse": 0.0, "sc": 0.0}
     total_count = 0
 
+    limit_batches = cfg.get("validation_batches", None)
+
     for i, (noisy, clean) in enumerate(val_dl):
         if limit_batches is not None and i >= limit_batches:
             break
-        noisy, clean = noisy.cuda(), clean.cuda()  # noqa: PLW2901
 
-        target = target_model(clean)
-        pred = model(noisy)
+        with accelerator.autocast():
+            target = target_model(clean)
+            pred = model(noisy)
 
-        min_len = min(pred.size(2), target.size(2))
-        pred, target = pred[:, :, :min_len], target[:, :, :min_len]
+            min_len = min(pred.size(2), target.size(2))
+            pred, target = pred[:, :, :min_len], target[:, :, :min_len]
 
-        mae_loss = loss_fns["mae"](pred, target)
-        mse_loss = loss_fns["mse"](pred, target)
-        sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
-        loss = mae_loss + mse_loss + sc_loss
+            mae_loss = loss_fns["mae"](pred, target)
+            mse_loss = loss_fns["mse"](pred, target)
+            sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+            loss = mae_loss + mse_loss + sc_loss
 
-        total_losses["total"] += loss.item() * noisy.size(0)
-        total_losses["mae"] += mae_loss.item() * noisy.size(0)
-        total_losses["mse"] += mse_loss.item() * noisy.size(0)
-        total_losses["sc"] += sc_loss.item() * noisy.size(0)
-        total_count += noisy.size(0)
+        # Accelerateのgatherを使用してマルチGPUでの損失を集約
+        all_losses = accelerator.gather(torch.stack([loss, mae_loss, mse_loss, sc_loss]))
+        batch_sizes = accelerator.gather(torch.tensor(noisy.size(0), device=accelerator.device))
 
-    avg_losses = {key: val / total_count for key, val in total_losses.items()}
+        total_losses["total"] += all_losses[0].sum().item()
+        total_losses["mae"] += all_losses[1].sum().item()
+        total_losses["mse"] += all_losses[2].sum().item()
+        total_losses["sc"] += all_losses[3].sum().item()
+        total_count += batch_sizes.sum().item()
+
+    avg_losses = {f"val_loss/{key}": val / total_count for key, val in total_losses.items()}
     model.train()
     return avg_losses
 
 
-def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
-    resume_checkpoint_path = get_resume_checkpoint_path(cfg)
-    resumed_checkpoint = None
-    if resume_checkpoint_path:
-        resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
-        restore_random_states(resumed_checkpoint)
-        print(f"[INFO] Resuming from step {resumed_checkpoint['step']}")
+def train_adapter(cfg: DictConfig) -> None:
+    """
+    Accelerateベースの並列Adapter学習
+    """
+    # Acceleratorとロガーの初期化
+    accelerator, logger = build_accelerator(cfg)
 
-    setup_wandb_resume(cfg, resumed_checkpoint)
+    # 乱数シードの設定
+    setup_random_seeds(accelerator, cfg.get("seed", 42))
 
-    dl = DataLoader(
-        AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
+    # データローダーの準備
+    train_ds = AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
+    val_ds = AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False)
+
+    train_dl = DataLoader(
+        train_ds,
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
@@ -84,7 +96,7 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
     )
 
     val_dl = DataLoader(
-        AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False),  # シャッフルは不要
+        val_ds,
         batch_size=cfg.batch_size,
         num_workers=cfg.loader.num_workers,
         pin_memory=cfg.loader.pin_memory,
@@ -92,20 +104,18 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
         drop_last=False,
     )
 
-    model = FeatureCleaner(cfg.model).cuda().float()
+    # モデルの準備
+    model = FeatureCleaner(cfg.model).float()
+    target_model = HubertExtractor(
+        model_name=cfg.model.hubert_model_name,
+        layer=cfg.model.hubert_layer,
+    ).float().eval()
 
-    target_model = (
-        HubertExtractor(
-            model_name=cfg.model.hubert_model_name,
-            layer=cfg.model.hubert_layer,
-        )
-        .cuda()
-        .float()
-        .eval()
-    )
+    # target_modelの勾配を無効化
     for param in target_model.parameters():
         param.requires_grad = False
 
+    # オプティマイザーとスケジューラーの準備
     opt = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.optim.lr,
@@ -113,7 +123,6 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
         betas=tuple(cfg.optim.betas),
     )
 
-    # スケジューラの総ステップ数をcfg.stepsから直接取得
     scheduler = get_scheduler(
         name=cfg.optim.scheduler.name,
         optimizer=opt,
@@ -121,108 +130,113 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
         num_training_steps=cfg.steps,
     )
 
-    start_it = 0
-    if resumed_checkpoint:
-        model.load_state_dict(resumed_checkpoint["model_state_dict"])
-        opt.load_state_dict(resumed_checkpoint["optimizer_state_dict"])
-        if "scheduler_state_dict" in resumed_checkpoint:
-            scheduler.load_state_dict(resumed_checkpoint["scheduler_state_dict"])
-        start_it = resumed_checkpoint.get("step", 0) + 1
-        print("[INFO] Restored model, optimizer, and scheduler states")
+    # Accelerator.prepareで一括準備
+    model, target_model, opt, scheduler, train_dl, val_dl = accelerator.prepare(
+        model, target_model, opt, scheduler, train_dl, val_dl
+    )
 
+    # 損失関数の準備
     mae_loss_fn = nn.L1Loss()
     mse_loss_fn = nn.MSELoss()
+    loss_fns = {"mae": mae_loss_fn, "mse": mse_loss_fn}
 
-    dl_iter = iter(dl)
+    # チェックポイントからの再開
+    start_step = 0
+    checkpoint_dir = pathlib.Path(cfg.save_dir)
+    if (checkpoint_dir / "pytorch_model.bin").exists():
+        print_main(accelerator, f"Loading checkpoint from {checkpoint_dir}")
+        accelerator.load_state(checkpoint_dir)
+        # ステップ数の復元（必要に応じてファイルから読み込み）
+        step_file = checkpoint_dir / "step.txt"
+        if step_file.exists():
+            start_step = int(step_file.read_text()) + 1
+            print_main(accelerator, f"Resuming from step {start_step}")
 
-    accumulation_steps = cfg.training.gradient_accumulation_steps
-    opt.zero_grad(set_to_none=True)
+    # データローダーのイテレーター作成
+    train_iter = iter(train_dl)
 
-    for it in range(start_it, cfg.steps):
-        if it > 0 and it % cfg.validation_interval == 0:
+    print_main(accelerator, "Starting Adapter training with Accelerate")
+    print_main(accelerator, f"Mixed precision: {accelerator.mixed_precision}")
+    print_main(accelerator, f"Gradient accumulation steps: {accelerator.gradient_accumulation_steps}")
+
+    # 学習ループ
+    for step in range(start_step, cfg.steps):
+        # 検証の実行
+        if step > 0 and step % cfg.validation_interval == 0:
             val_losses = validate(
-                model,
-                target_model,
-                val_dl,
-                {"mae": mae_loss_fn, "mse": mse_loss_fn},
-                limit_batches=cfg.get("validation_batches"),
+                model, target_model, val_dl, loss_fns, accelerator, cfg
             )
-            wandb.log({f"val_loss/{key}": val for key, val in val_losses.items()}, step=it)
-            print(f"[Adapter] it:{it:>7} | Validation Loss: {val_losses['total']:.4f}")
+            log_metrics(accelerator, val_losses, step)
+            print_main(accelerator, f"[Adapter] Step:{step:>7} | Validation Loss: {val_losses['val_loss/total']:.4f}")
 
+        # データの取得（イテレーター循環処理）
         try:
-            noisy, clean = next(dl_iter)
+            noisy, clean = next(train_iter)
         except StopIteration:
-            dl_iter = iter(dl)
-            noisy, clean = next(dl_iter)
+            train_iter = iter(train_dl)
+            noisy, clean = next(train_iter)
 
-        noisy, clean = noisy.cuda(), clean.cuda()
+        # 勾配累積のコンテキスト内で学習
+        with accelerator.accumulate(model):
+            with accelerator.autocast():
+                # ターゲット特徴量の計算（勾配なし）
+                with torch.no_grad():
+                    target = target_model(clean)
 
-        with torch.no_grad():
-            target = target_model(clean)
+                # 予測の計算
+                pred = model(noisy)
 
-        pred = model(noisy)
+                # 長さの調整
+                min_len = min(pred.size(2), target.size(2))
+                pred = pred[:, :, :min_len]
+                target = target[:, :, :min_len]
 
-        min_len = min(pred.size(2), target.size(2))
-        pred = pred[:, :, :min_len]
-        target = target[:, :, :min_len]
+                # 損失の計算
+                mae_loss = mae_loss_fn(pred, target)
+                mse_loss = mse_loss_fn(pred, target)
+                sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+                loss = mae_loss + mse_loss + sc_loss
 
-        mae_loss = mae_loss_fn(pred, target)
-        mse_loss = mse_loss_fn(pred, target)
-        sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
-        loss = mae_loss + mse_loss + sc_loss
+            # 逆伝播と最適化
+            accelerator.backward(loss)
 
-        loss = loss / accumulation_steps
+            # 勾配クリッピング
+            if accelerator.sync_gradients:
+                accelerator.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
 
-        loss.backward()
-
-        if (it + 1) % accumulation_steps == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
             opt.step()
             scheduler.step()
-            opt.zero_grad(set_to_none=True)
+            opt.zero_grad()
 
-        if it % cfg.log_interval == 0:
-            log_data = {
-                "iteration": it,
-                "loss/total": loss.item(),
-                "loss/mae": mae_loss.item(),
-                "loss/mse": mse_loss.item(),
-                "loss/sc": sc_loss.item(),
-                "learning_rate": scheduler.get_last_lr()[0],
+        # ログ出力
+        if step % cfg.log_interval == 0:
+            metrics = {
+                "train/loss_total": loss.item(),
+                "train/loss_mae": mae_loss.item(),
+                "train/loss_mse": mse_loss.item(),
+                "train/loss_sc": sc_loss.item(),
+                "lr": scheduler.get_last_lr()[0],
             }
-            print(
-                f"[Adapter] it:{it:>7} | "
+            log_metrics(accelerator, metrics, step)
+            print_main(
+                accelerator,
+                f"[Adapter] Step:{step:>7} | "
                 f"Total Loss={loss.item():.4f} | "
                 f"MAE={mae_loss.item():.4f} | "
                 f"MSE={mse_loss.item():.4f} | "
-                f"SC={sc_loss.item():.4f}"
-            )
-            if cfg.wandb.enabled:
-                wandb.log(log_data, step=it)
-
-        if hasattr(cfg, "checkpoint") and it > 0 and it % cfg.checkpoint.save_interval == 0:
-            save_checkpoint(
-                checkpoint_dir=cfg.save_dir,
-                step=it,
-                model_state=model.state_dict(),
-                optimizer_state=opt.state_dict(),
-                scheduler_state=scheduler.state_dict(),
-                cfg=cfg,
-                keep_last_n=cfg.checkpoint.keep_last_n,
+                f"SC={sc_loss.item():.4f}",
             )
 
-    # 最終モデル保存
-    sd = pathlib.Path(cfg.save_dir)
-    sd.mkdir(parents=True, exist_ok=True)
-    model_path = sd / "adapter_final.pt"
-    torch.save(model.state_dict(), model_path)
+        # チェックポイントの保存
+        if step > 0 and step % cfg.checkpoint.save_interval == 0:
+            print_main(accelerator, f"Saving checkpoint at step {step}")
+            accelerator.save_state(output_dir=cfg.save_dir, safe_serialization=False)
+            # ステップ数も保存
+            if accelerator.is_main_process:
+                (pathlib.Path(cfg.save_dir) / "step.txt").write_text(str(step))
 
-    if cfg.wandb.enabled and cfg.wandb.log_model:
-        artifact = wandb.Artifact("adapter_model", type="model")
-        artifact.add_file(str(model_path))
-        wandb.log_artifact(artifact)
-        print("[INFO] Model saved as wandb artifact")
-
-    if cfg.wandb.enabled:
-        wandb.finish()
+    # 学習終了時の処理
+    print_main(accelerator, "Training completed")
+    if accelerator.is_main_process:
+        accelerator.save_state(output_dir=cfg.save_dir, safe_serialization=False)
+        accelerator.end_training()
