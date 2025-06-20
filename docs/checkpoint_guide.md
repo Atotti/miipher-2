@@ -78,20 +78,6 @@ uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter/checkpoint_5k.pt
 uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft/checkpoint_10k.pt"
 ```
 
-### 3. 自動再開スクリプトの使用
-
-最新のチェックポイントを自動で見つけて再開：
-
-```bash
-# Adapter学習の自動再開
-bash scripts/auto_resume_adapter.sh
-
-# HiFi-GAN学習の自動再開
-bash scripts/auto_resume_hifigan.sh
-```
-
-
-
 ## チェックポイントファイルの構造
 
 ### Adapter学習のチェックポイント

@@ -54,7 +54,7 @@ uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_12
 uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_12/checkpoint_5k.pt"
 
 # HiFi-GAN pretrainの再開
-uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain_layer_12/checkpoint_5k.pt"
+uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain_layer_9_mhubert_147/checkpoint_10k.pt"
 
 # HiFi-GAN finetuneの再開
 uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft_layer_12/checkpoint_10k.pt"

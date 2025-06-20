@@ -248,8 +248,6 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
-        optim_g.zero_grad()
-
         with torch.no_grad():
             feat = hubert_extractor(clean_16k)  # クリーンなHuBERT特徴量
 
@@ -282,8 +280,6 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         loss_g_scaled = loss_gen_all / accumulation_steps
         loss_g_scaled.backward()
 
-        optim_d.zero_grad()
-
         y_g_hat_detached = y_g_hat.detach()
         y_df_hat_r, y_df_hat_g, _, _ = mpd(clean_22k, y_g_hat_detached)
 
@@ -300,8 +296,8 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         if (step + 1) % accumulation_steps == 0:
             optim_g.step()
             optim_d.step()
-            optim_g.zero_grad()
-            optim_d.zero_grad()
+            optim_g.zero_grad(set_to_none=True)
+            optim_d.zero_grad(set_to_none=True)
 
         if (step % cfg.log_interval) == 0:
             log_data = {

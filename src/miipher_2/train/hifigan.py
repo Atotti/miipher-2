@@ -326,8 +326,8 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
         if (step + 1) % accumulation_steps == 0:
             optim_g.step()
             optim_d.step()
-            optim_g.zero_grad()
-            optim_d.zero_grad()
+            optim_g.zero_grad(set_to_none=True)
+            optim_d.zero_grad(set_to_none=True)
 
         # ---- ログ出力とチェックポイント保存 ----
         if (step % cfg.log_interval) == 0:
