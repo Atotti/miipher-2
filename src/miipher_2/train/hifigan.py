@@ -20,7 +20,7 @@ from miipher_2.hifigan.models import (
     feature_loss,
     generator_loss,
 )
-from miipher_2.hifigan.prenet import MHubertToMel
+from miipher_2.hifigan.prenet import Miipher2PreNet
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import save
 from miipher_2.utils.checkpoint import (
@@ -203,7 +203,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
 
     # miipher-2のprenetと公式Generatorを接続
     hubert_dim = cleaner.extractor.hubert.config.hidden_size
-    prenet = MHubertToMel(hubert_dim).cuda()
+    prenet = Miipher2PreNet(in_dim=hubert_dim).cuda()
 
     # 次に公式Generator
     generator = Generator(h).cuda()
