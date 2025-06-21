@@ -21,7 +21,7 @@ class PositionalEncoding(nn.Module):
 
 
 class ConvModule(nn.Module):
-    """Depth‑wise Conv1D + GLU (ESPnet style)."""
+    """Depth-wise Conv1D + GLU (ESPnet style)."""
 
     def __init__(self, channels: int, kernel_size: int = 31) -> None:
         super().__init__()
@@ -46,7 +46,7 @@ class ConvModule(nn.Module):
 
 
 class ConformerLayer(nn.Module):
-    """HuBERT‑compatible lightweight Conformer."""
+    """HuBERT-compatible lightweight Conformer."""
 
     def __init__(self, dim: int, heads: int = 8, ff_mult: float = 1.0) -> None:
         super().__init__()
@@ -83,21 +83,21 @@ class ConformerLayer(nn.Module):
 
 class Miipher2PreNet(nn.Module):
     """
-    *prenet* used in Miipher‑2, extended to emit **mel80 @ 86 fps** directly.
+    *prenet* used in Miipher-2, extended to emit **mel80 @ 86 fps** directly.
 
     Parameters
     ----------
     in_dim : int
-        Hidden size of USM/HuBERT features (e.g. 768 for mHuBERT‑147,
-        1024 for japanese‑hubert‑large, 1536 for USM‑2B).
+        Hidden size of USM/HuBERT features (e.g. 768 for mHuBERT-147,
+        1024 for japanese-hubert-large, 1536 for USM-2B).
     n_layers : int, default 4
         Number of Conformer blocks (paper uses 4).
     mel_dim : int, default 80
-        Output channels expected by HiFi‑GAN.
+        Output channels expected by HiFi-GAN.
     src_fps : Literal[50.0, ...], default 50.0
-        Frame‑rate of the encoder features (16 kHz / 320 stride).
+        Frame-rate of the encoder features (16 kHz / 320 stride).
     tgt_hop : int, default 256
-        Hop length of the downstream vocoder (22 050 Hz / 256 = 86.1328 fps).
+        Hop length of the downstream vocoder (22 050 Hz / 256 = 86.1328 fps).
     """
 
     def __init__(
@@ -126,12 +126,12 @@ class Miipher2PreNet(nn.Module):
         Parameters
         ----------
         x : Tensor, shape (B, in_dim, T_enc)
-            USM/HuBERT encoder features at ~50 fps.
+            USM/HuBERT encoder features at ~50 fps.
 
         Returns
         -------
         mel : Tensor, shape (B, 80, T_vocoder)
-            Mel‑like features aligned with HiFi‑GAN hop size.
+            Mel-like features aligned with HiFi-GAN hop size.
         """
         x = self.pos_enc(x)  # (B, C, T)
         x = x.transpose(1, 2)  # (B, T, C)

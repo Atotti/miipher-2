@@ -1,6 +1,6 @@
-# open‑miipher‑2
+# open-miipher-2
 
-HuBERT + Parallel Adapter + HiFi‑GAN で [Miipher‑2](https://arxiv.org/abs/2505.04457) を再現するリポジトリです。
+HuBERT + Parallel Adapter + HiFi-GAN で [Miipher-2](https://arxiv.org/abs/2505.04457) を再現するリポジトリです。
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ uv sync
 ```
 configs/           hydra yaml (preprocess, adapter, hifigan, infer)
 src/miipher_2/     python modules
-cmd/               entry‑point CLI wrappers
+cmd/               entry-point CLI wrappers
 exp/               checkpoints 出力先
 ```
 
@@ -34,13 +34,13 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 uv run cmd/train_adapter.py --config-name adapter_layer_4_mhubert_147
 ```
 
-### HiFi‑GAN Pre-train
+### HiFi-GAN Pre-train
 
 ```bash
 uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_4_mhubert_147
 ```
 
-### HiFi‑GAN fine‑tune
+### HiFi-GAN fine-tune
 
 ```bash
 uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_4_mhubert_147

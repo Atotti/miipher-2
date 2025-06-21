@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import torch
 from omegaconf import DictConfig
