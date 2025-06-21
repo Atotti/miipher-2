@@ -4,7 +4,6 @@ import pathlib
 
 import torch
 import torch.nn.functional as F  # noqa: N812
-from accelerate import Accelerator
 from omegaconf import DictConfig, OmegaConf
 from torch import optim
 from torch.nn.utils.rnn import pad_sequence
@@ -51,7 +50,6 @@ class AttrDict(dict):
 
 @torch.no_grad()
 def validate(
-    accelerator: Accelerator,
     h: AttrDict,
     hubert_extractor: torch.nn.Module,
     prenet: torch.nn.Module,
@@ -61,7 +59,7 @@ def validate(
     val_dl: DataLoader,
     limit_batches: int | None = None,
 ) -> dict:
-    """HiFi-GAN Pre-training Validation with distributed support"""
+    """HiFi-GAN Pre-training Validation"""
     hubert_extractor.eval()
     prenet.eval()
     generator.eval()
@@ -80,6 +78,7 @@ def validate(
     for i, (clean_16k, clean_22k) in enumerate(val_dl):
         if limit_batches is not None and i >= limit_batches:
             break
+        clean_16k, clean_22k = clean_16k.cuda(), clean_22k.cuda()
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
@@ -116,7 +115,7 @@ def validate(
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
         loss_disc_all = loss_disc_s + loss_disc_f
 
-        # Accumulate losses locally
+        # Accumulate losses
         batch_size = clean_16k.size(0)
         total_losses["generator_total"] += loss_gen_all.item() * batch_size
         total_losses["discriminator_total"] += loss_disc_all.item() * batch_size
@@ -125,35 +124,7 @@ def validate(
         total_losses["generator_adv"] += (loss_gen_s + loss_gen_f).item() * batch_size
         total_count += batch_size
 
-    # Reduce losses across all processes
-    total_losses_tensor = torch.tensor([
-        total_losses["generator_total"],
-        total_losses["discriminator_total"],
-        total_losses["mel_l1"],
-        total_losses["feature_matching"],
-        total_losses["generator_adv"]
-    ], device=accelerator.device)
-    total_count_tensor = torch.tensor(total_count, device=accelerator.device)
-
-    total_losses_reduced = accelerator.reduce(total_losses_tensor, reduction="sum")
-    total_count_reduced = accelerator.reduce(total_count_tensor, reduction="sum")
-
-    if accelerator.is_main_process:
-        avg_losses = {
-            f"pretrain/val_loss/generator_total": total_losses_reduced[0].item() / total_count_reduced.item(),
-            f"pretrain/val_loss/discriminator_total": total_losses_reduced[1].item() / total_count_reduced.item(),
-            f"pretrain/val_loss/mel_l1": total_losses_reduced[2].item() / total_count_reduced.item(),
-            f"pretrain/val_loss/feature_matching": total_losses_reduced[3].item() / total_count_reduced.item(),
-            f"pretrain/val_loss/generator_adv": total_losses_reduced[4].item() / total_count_reduced.item(),
-        }
-    else:
-        avg_losses = {
-            f"pretrain/val_loss/generator_total": 0.0,
-            f"pretrain/val_loss/discriminator_total": 0.0,
-            f"pretrain/val_loss/mel_l1": 0.0,
-            f"pretrain/val_loss/feature_matching": 0.0,
-            f"pretrain/val_loss/generator_adv": 0.0,
-        }
+    avg_losses = {f"pretrain/val_loss/{key}": val / total_count for key, val in total_losses.items()}
 
     # Set models back to train mode, except for the frozen extractor
     prenet.train()
@@ -165,35 +136,25 @@ def validate(
 
 
 def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
-    # Initialize Accelerator
-    accelerator = Accelerator(
-        gradient_accumulation_steps=getattr(cfg.training, 'gradient_accumulation_steps', 1),
-        mixed_precision=getattr(cfg.training, 'mixed_precision', 'no'),
-        log_with="wandb" if cfg.wandb.enabled else None,
-        project_dir=cfg.save_dir,
-    )
-
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
     if resume_checkpoint_path:
         resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
         restore_random_states(resumed_checkpoint)
-        if accelerator.is_main_process:
-            print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
+        print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
 
     # WandB初期化
-    if accelerator.is_main_process:
-        if resumed_checkpoint and "wandb_run_id" in resumed_checkpoint:
-            wandb_id = resumed_checkpoint["wandb_run_id"]
-            setup_wandb_resume(cfg, resumed_checkpoint)
-        else:
-            wandb.init(
-                project=cfg.wandb.project,
-                entity=cfg.wandb.entity,
-                name=cfg.wandb.name,
-                config=OmegaConf.to_container(cfg, resolve=True),
-            )
-            wandb_id = wandb.run.id if wandb.run else None
+    if resumed_checkpoint and "wandb_run_id" in resumed_checkpoint:
+        wandb_id = resumed_checkpoint["wandb_run_id"]
+        setup_wandb_resume(cfg, resumed_checkpoint)
+    else:
+        wandb.init(
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            name=cfg.wandb.name,
+            config=OmegaConf.to_container(cfg, resolve=True),
+        )
+        wandb_id = wandb.run.id
 
     dl = DataLoader(
         CleanVocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle),
@@ -220,6 +181,7 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
             model_name=cfg.model.hubert_model_name,
             layer=cfg.model.hubert_layer,
         )
+        .cuda()
         .eval()
     )
     for param in hubert_extractor.parameters():
@@ -232,25 +194,19 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     h = AttrDict(h_dict)
 
     hubert_dim = hubert_extractor.hubert.config.hidden_size
-    prenet = Miipher2PreNet(in_dim=hubert_dim)
-    generator = Generator(h)
+    prenet = Miipher2PreNet(in_dim=hubert_dim).cuda()
+    generator = Generator(h).cuda()
 
-    mpd = MultiPeriodDiscriminator()
-    msd = MultiScaleDiscriminator()
+    mpd = MultiPeriodDiscriminator().cuda()
+    msd = MultiScaleDiscriminator().cuda()
 
     optim_g = optim.AdamW(
         itertools.chain(prenet.parameters(), generator.parameters()), lr=cfg.lr, betas=tuple(cfg.betas)
     )
     optim_d = optim.AdamW(itertools.chain(mpd.parameters(), msd.parameters()), lr=cfg.lr, betas=tuple(cfg.betas))
 
-    # Prepare models, optimizers, and dataloaders with accelerator
-    hubert_extractor, prenet, generator, mpd, msd, optim_g, optim_d, dl, val_dl = accelerator.prepare(
-        hubert_extractor, prenet, generator, mpd, msd, optim_g, optim_d, dl, val_dl
-    )
-
     start_step = 0
     if resumed_checkpoint:
-        # Load states manually for compatibility with existing checkpoints
         prenet.load_state_dict(resumed_checkpoint["prenet"])
         generator.load_state_dict(resumed_checkpoint["generator"])
         mpd.load_state_dict(resumed_checkpoint["mpd"])
@@ -259,91 +215,78 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         optim_d.load_state_dict(resumed_checkpoint["optim_d"])
         start_step = resumed_checkpoint["steps"] + 1
     else:
-        state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu", weights_only=False)
+        state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu")
         generator.load_state_dict(state_dict_g["generator"])
-        if accelerator.is_main_process:
-            print(f"[INFO] Loaded pre-trained Generator from: {cfg.pretrained_gen}")
+        print(f"[INFO] Loaded pre-trained Generator from: {cfg.pretrained_gen}")
 
     # --- 学習ループ ---
     dl_iter = iter(dl)
     for step in range(start_step, cfg.steps):
         if hasattr(cfg, "validation_interval") and step > 0 and step % cfg.validation_interval == 0:
             val_losses = validate(
-                accelerator, h, hubert_extractor, prenet, generator, mpd, msd, val_dl, limit_batches=cfg.get("validation_batches")
+                h, hubert_extractor, prenet, generator, mpd, msd, val_dl, limit_batches=cfg.get("validation_batches")
             )
-            if accelerator.is_main_process:
-                if cfg.wandb.enabled:
-                    accelerator.log(val_losses, step=step)
-                accelerator.print(
-                    f"[Pre-train Step {step:>7d}/{cfg.steps}] "
-                    f"Val Gen Loss: {val_losses['pretrain/val_loss/generator_total']:.4f}, "
-                    f"Val Disc Loss: {val_losses['pretrain/val_loss/discriminator_total']:.4f}"
-                )
-
+            if cfg.wandb.enabled:
+                wandb.log(val_losses, step=step)
+            print(
+                f"[Pre-train Step {step:>7d}/{cfg.steps}] "
+                f"Val Gen Loss: {val_losses['pretrain/val_loss/generator_total']:.4f}, "
+                f"Val Disc Loss: {val_losses['pretrain/val_loss/discriminator_total']:.4f}"
+            )
         try:
             clean_16k, clean_22k = next(dl_iter)
         except StopIteration:
             dl_iter = iter(dl)
             clean_16k, clean_22k = next(dl_iter)
 
+        clean_16k, clean_22k = clean_16k.cuda(), clean_22k.cuda()
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
-        # Generator training step
-        with accelerator.accumulate(prenet):
-            with torch.no_grad():
-                feat = hubert_extractor(clean_16k)
+        optim_g.zero_grad()
 
-            y_g_hat_prenet = prenet(feat)
-            y_g_hat = generator(y_g_hat_prenet)
+        with torch.no_grad():
+            feat = hubert_extractor(clean_16k)  # クリーンなHuBERT特徴量
 
-            # Align lengths
-            min_len = min(clean_22k.size(2), y_g_hat.size(2))
-            clean_22k_aligned, y_g_hat_aligned = clean_22k[:, :, :min_len], y_g_hat[:, :, :min_len]
+        y_g_hat_prenet = prenet(feat)
+        y_g_hat = generator(y_g_hat_prenet)
 
-            # Mel spectrogram loss
-            y_mel = mel_spectrogram(
-                clean_22k_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
-            )
-            y_g_hat_mel = mel_spectrogram(
-                y_g_hat_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
-            )
-            loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
+        # train_hifigan.pyと同じ損失計算
+        min_len = min(clean_22k.size(2), y_g_hat.size(2))
+        clean_22k, y_g_hat = clean_22k[:, :, :min_len], y_g_hat[:, :, :min_len]
 
-            # GAN losses
-            y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k_aligned, y_g_hat_aligned)
-            y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k_aligned, y_g_hat_aligned)
+        y_mel = mel_spectrogram(
+            clean_22k.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
+        y_g_hat_mel = mel_spectrogram(
+            y_g_hat.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+        )
 
-            loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-            loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-            loss_gen_f, _ = generator_loss(y_df_hat_g)
-            loss_gen_s, _ = generator_loss(y_ds_hat_g)
+        loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
 
-            loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+        y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k, y_g_hat)
+        y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k, y_g_hat)
 
-            accelerator.backward(loss_gen_all)
-            optim_g.step()
-            optim_g.zero_grad(set_to_none=True)
+        loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+        loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+        loss_gen_f, _ = generator_loss(y_df_hat_g)
+        loss_gen_s, _ = generator_loss(y_ds_hat_g)
 
-        # Discriminator training step
-        with accelerator.accumulate(mpd):
-            y_g_hat_detached = y_g_hat_aligned.detach()
+        loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+        loss_gen_all.backward()
+        optim_g.step()
 
-            # MPD loss
-            y_df_hat_r, y_df_hat_g, _, _ = mpd(clean_22k_aligned, y_g_hat_detached)
-            loss_disc_f, _, _ = discriminator_loss(y_df_hat_r, y_df_hat_g)
+        optim_d.zero_grad()
+        y_g_hat_detached = y_g_hat.detach()
+        y_df_hat_r, y_df_hat_g, _, _ = mpd(clean_22k, y_g_hat_detached)
+        loss_disc_f, _, _ = discriminator_loss(y_df_hat_r, y_df_hat_g)
+        y_ds_hat_r, y_ds_hat_g, _, _ = msd(clean_22k, y_g_hat_detached)
+        loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
+        loss_disc_all = loss_disc_s + loss_disc_f
+        loss_disc_all.backward()
+        optim_d.step()
 
-            # MSD loss
-            y_ds_hat_r, y_ds_hat_g, _, _ = msd(clean_22k_aligned, y_g_hat_detached)
-            loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
-
-            loss_disc_all = loss_disc_s + loss_disc_f
-
-            accelerator.backward(loss_disc_all)
-            optim_d.step()
-            optim_d.zero_grad(set_to_none=True)
-
-        if accelerator.is_main_process and (step % cfg.log_interval) == 0:
+        if (step % cfg.log_interval) == 0:
             log_data = {
                 "pretrain/loss/generator_total": loss_gen_all.item(),
                 "pretrain/loss/generator_adv": (loss_gen_s + loss_gen_f).item(),
@@ -353,30 +296,46 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
                 "pretrain/learning_rate": optim_g.param_groups[0]["lr"],
             }
 
-            accelerator.print(
+            # コンソールの表示も更新
+            print(
                 f"[Pre-train Step {step:>7d}/{cfg.steps}] "
                 f"Gen_Loss: {log_data['pretrain/loss/generator_total']:.4f}, "
                 f"Disc_Loss: {log_data['pretrain/loss/discriminator_total']:.4f}"
             )
 
+            # 詳細な辞書をWandBに記録
             if cfg.wandb.enabled:
-                accelerator.log(log_data, step=step)
+                wandb.log(log_data, step=step)
 
         if hasattr(cfg, "checkpoint") and step > 0 and step % cfg.checkpoint.save_interval == 0:
-            if accelerator.is_main_process:
-                checkpoint_dir = pathlib.Path(cfg.save_dir) / f"checkpoint_{step}"
-                checkpoint_dir.mkdir(parents=True, exist_ok=True)
-                accelerator.save_state(str(checkpoint_dir))
-                accelerator.print(f"[INFO] Checkpoint saved at step {step}")
-
-                # Audio sample logging
-                if cfg.wandb.enabled and hasattr(cfg.wandb, 'log_audio') and cfg.wandb.log_audio:
-                    sample_path = checkpoint_dir / f"sample_{step}.wav"
-                    sample_path.parent.mkdir(parents=True, exist_ok=True)
-                    save(sample_path, y_g_hat_aligned[0:1].squeeze(0).cpu().detach().float(), sr=h.sampling_rate)
-                    accelerator.log(
-                        {"pretrain/audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)},
-                        step=step,
-                    )
-
-    accelerator.end_training()
+            checkpoint_dir = pathlib.Path(cfg.save_dir)
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            save_checkpoint(
+                checkpoint_dir=str(checkpoint_dir),
+                step=step,
+                model_state={},
+                optimizer_state={},
+                additional_states={
+                    "prenet": prenet.state_dict(),
+                    "generator": generator.state_dict(),
+                    "mpd": mpd.state_dict(),
+                    "msd": msd.state_dict(),
+                    "optim_g": optim_g.state_dict(),
+                    "optim_d": optim_d.state_dict(),
+                    "steps": step,
+                    "config": OmegaConf.to_container(cfg, resolve=True),
+                    "wandb_run_id": wandb_id,
+                },
+                cfg=cfg,
+                keep_last_n=cfg.checkpoint.keep_last_n,
+            )
+            # 音声サンプルをログ
+            if cfg.wandb.enabled and cfg.wandb.log_audio:
+                sample_path = checkpoint_dir / f"sample_{step}.wav"
+                save(sample_path, y_g_hat[0:1].squeeze(0).cpu().detach(), sr=h.sampling_rate)
+                wandb.log(
+                    {"pretrain/audio/generated_sample": wandb.Audio(str(sample_path), sample_rate=h.sampling_rate)},
+                    step=step,
+                )
+    if cfg.wandb.enabled:
+        wandb.finish()
