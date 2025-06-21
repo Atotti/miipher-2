@@ -166,9 +166,10 @@ def validate(
 
 def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     # Initialize Accelerator
+    training_cfg = cfg.get("training", {})
     accelerator = Accelerator(
-        gradient_accumulation_steps=getattr(cfg.training, 'gradient_accumulation_steps', 1),
-        mixed_precision=getattr(cfg.training, 'mixed_precision', 'no'),
+        gradient_accumulation_steps=training_cfg.get('gradient_accumulation_steps', 1),
+        mixed_precision=training_cfg.get('mixed_precision', 'no'),
         log_with="wandb" if cfg.wandb.enabled else None,
         project_dir=cfg.save_dir,
     )
@@ -179,7 +180,11 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
         resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
         restore_random_states(resumed_checkpoint)
         if accelerator.is_main_process:
+            print(f"[INFO] Resuming from explicitly specified checkpoint: {resume_checkpoint_path}")
             print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
+    else:
+        if accelerator.is_main_process:
+            print("[INFO] Starting fresh training (no checkpoint specified)")
 
     # WandB初期化
     if accelerator.is_main_process:

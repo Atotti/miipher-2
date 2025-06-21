@@ -96,7 +96,11 @@ def train_adapter(cfg: DictConfig) -> None:
         resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
         restore_random_states(resumed_checkpoint)
         if accelerator.is_main_process:
+            print(f"[INFO] Resuming from explicitly specified checkpoint: {resume_checkpoint_path}")
             print(f"[INFO] Resuming from step {resumed_checkpoint['step']}")
+    else:
+        if accelerator.is_main_process:
+            print("[INFO] Starting fresh training (no checkpoint specified)")
 
     if accelerator.is_main_process:
         setup_wandb_resume(cfg, resumed_checkpoint)

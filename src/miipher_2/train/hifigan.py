@@ -188,7 +188,11 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
         resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
         restore_random_states(resumed_checkpoint)
         if accelerator.is_main_process:
+            print(f"[INFO] Resuming from explicitly specified checkpoint: {resume_checkpoint_path}")
             print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
+    else:
+        if accelerator.is_main_process:
+            print("[INFO] Starting fresh training (no checkpoint specified)")
 
     # ---------------- Wandb初期化 ----------------
     if accelerator.is_main_process:
