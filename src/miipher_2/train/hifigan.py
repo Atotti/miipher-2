@@ -4,6 +4,7 @@ import pathlib
 
 import torch
 import torch.nn.functional as F  # noqa: N812
+from accelerate import Accelerator
 from omegaconf import DictConfig, OmegaConf
 from torch import optim
 from torch.nn.utils.rnn import pad_sequence
@@ -58,6 +59,7 @@ class AttrDict(dict):
 
 @torch.no_grad()
 def validate(
+    accelerator: Accelerator,
     h: AttrDict,
     cleaner: torch.nn.Module,
     prenet: torch.nn.Module,
@@ -67,7 +69,7 @@ def validate(
     val_dl: DataLoader,
     limit_batches: int | None = None,
 ) -> dict:
-    """HiFi-GAN Fine-tuning Validation"""
+    """HiFi-GAN Fine-tuning Validation with distributed support"""
     cleaner.eval()
     prenet.eval()
     generator.eval()
@@ -86,7 +88,6 @@ def validate(
     for i, (noisy_16k, clean_22k) in enumerate(val_dl):
         if limit_batches is not None and i >= limit_batches:
             break
-        noisy_16k, clean_22k = noisy_16k.cuda(), clean_22k.cuda()
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
@@ -123,7 +124,7 @@ def validate(
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
         loss_disc_all = loss_disc_s + loss_disc_f
 
-        # Accumulate losses
+        # Accumulate losses locally
         batch_size = noisy_16k.size(0)
         total_losses["generator_total"] += loss_gen_all.item() * batch_size
         total_losses["discriminator_total"] += loss_disc_all.item() * batch_size
@@ -132,7 +133,35 @@ def validate(
         total_losses["generator_adv"] += (loss_gen_s + loss_gen_f).item() * batch_size
         total_count += batch_size
 
-    avg_losses = {f"val_loss/{key}": val / total_count for key, val in total_losses.items()}
+    # Reduce losses across all processes
+    total_losses_tensor = torch.tensor([
+        total_losses["generator_total"],
+        total_losses["discriminator_total"],
+        total_losses["mel_l1"],
+        total_losses["feature_matching"],
+        total_losses["generator_adv"]
+    ], device=accelerator.device)
+    total_count_tensor = torch.tensor(total_count, device=accelerator.device)
+
+    total_losses_reduced = accelerator.reduce(total_losses_tensor, reduction="sum")
+    total_count_reduced = accelerator.reduce(total_count_tensor, reduction="sum")
+
+    if accelerator.is_main_process:
+        avg_losses = {
+            f"val_loss/generator_total": total_losses_reduced[0].item() / total_count_reduced.item(),
+            f"val_loss/discriminator_total": total_losses_reduced[1].item() / total_count_reduced.item(),
+            f"val_loss/mel_l1": total_losses_reduced[2].item() / total_count_reduced.item(),
+            f"val_loss/feature_matching": total_losses_reduced[3].item() / total_count_reduced.item(),
+            f"val_loss/generator_adv": total_losses_reduced[4].item() / total_count_reduced.item(),
+        }
+    else:
+        avg_losses = {
+            f"val_loss/generator_total": 0.0,
+            f"val_loss/discriminator_total": 0.0,
+            f"val_loss/mel_l1": 0.0,
+            f"val_loss/feature_matching": 0.0,
+            f"val_loss/generator_adv": 0.0,
+        }
 
     # Set models back to train mode, except for the frozen cleaner
     prenet.train()
@@ -144,27 +173,37 @@ def validate(
 
 
 def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
+    # Initialize Accelerator
+    accelerator = Accelerator(
+        gradient_accumulation_steps=getattr(cfg.training, 'gradient_accumulation_steps', 1),
+        mixed_precision=getattr(cfg.training, 'mixed_precision', 'no'),
+        log_with="wandb" if cfg.wandb.enabled else None,
+        project_dir=cfg.save_dir,
+    )
+
     # ---------------- チェックポイント確認と再開 ----------------
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
     if resume_checkpoint_path:
-        resumed_checkpoint = load_checkpoint(resume_checkpoint_path)
+        resumed_checkpoint = load_checkpoint(str(resume_checkpoint_path))
         restore_random_states(resumed_checkpoint)
-        print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
+        if accelerator.is_main_process:
+            print(f"[INFO] Resuming from step {resumed_checkpoint['steps']}")
 
     # ---------------- Wandb初期化 ----------------
-    # wandbのIDはチェックポイントから引き継ぐ
-    if resumed_checkpoint and "wandb_run_id" in resumed_checkpoint:
-        wandb_id = resumed_checkpoint["wandb_run_id"]
-        setup_wandb_resume(cfg, resumed_checkpoint)
-    else:
-        wandb.init(
-            project=cfg.wandb.project,
-            entity=cfg.wandb.entity,
-            name=cfg.wandb.name,
-            config=OmegaConf.to_container(cfg, resolve=True),
-        )
-        wandb_id = wandb.run.id
+    if accelerator.is_main_process:
+        # wandbのIDはチェックポイントから引き継ぐ
+        if resumed_checkpoint and "wandb_run_id" in resumed_checkpoint:
+            wandb_id = resumed_checkpoint["wandb_run_id"]
+            setup_wandb_resume(cfg, resumed_checkpoint)
+        else:
+            wandb.init(
+                project=cfg.wandb.project,
+                entity=cfg.wandb.entity,
+                name=cfg.wandb.name,
+                config=OmegaConf.to_container(cfg, resolve=True),
+            )
+            wandb_id = wandb.run.id if wandb.run else None
 
     # --- データローダー ---
     # VocoderDatasetは(noisy_16k, clean_22k)のタプルを返す
@@ -243,7 +282,7 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
     for step in range(start_step, cfg.steps):
         if hasattr(cfg, "validation_interval") and step > 0 and step % cfg.validation_interval == 0:
             val_losses = validate(
-                h, cleaner, prenet, generator, mpd, msd, val_dl, limit_batches=cfg.get("validation_batches")
+                accelerator, h, cleaner, prenet, generator, mpd, msd, val_dl, limit_batches=cfg.get("validation_batches")
             )
             if cfg.wandb.enabled:
                 wandb.log(val_losses, step=step)
