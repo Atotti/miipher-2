@@ -31,19 +31,19 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ### Parallel Adapter
 
 ```bash
-uv run cmd/train_adapter.py --config-name adapter_layer_12
+uv run cmd/train_adapter.py --config-name adapter_layer_4_mhubert_147
 ```
 
 ### HiFi‑GAN Pre-train
 
 ```bash
-uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_12
+uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_4_mhubert_147
 ```
 
 ### HiFi‑GAN fine‑tune
 
 ```bash
-uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_12
+uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_4_mhubert_147
 ```
 
 ### 学習の再開
