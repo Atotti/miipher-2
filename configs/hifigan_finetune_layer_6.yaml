@@ -12,8 +12,6 @@ loader:
   num_workers: 8
   pin_memory: true
 
-gradient_accumulation_steps: 8
-
 adapter_ckpt: exp/adapter_layer_6/checkpoint_60k.pt
 pretrained_gen: exp/hifigan_pretrain_layer_6/checkpoint_23k.pt
 

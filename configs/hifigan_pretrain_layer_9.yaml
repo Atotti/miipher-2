@@ -13,8 +13,6 @@ loader:
   num_workers: 8
   pin_memory: true
 
-gradient_accumulation_steps: 8
-
 # 事前学習では学習済みAdapterは不要
 adapter_ckpt: null
 

@@ -64,7 +64,7 @@ def validate(
     return avg_losses
 
 
-def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
+def train_adapter(cfg: DictConfig) -> None:
     resume_checkpoint_path = get_resume_checkpoint_path(cfg)
     resumed_checkpoint = None
     if resume_checkpoint_path:
@@ -135,9 +135,6 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
 
     dl_iter = iter(dl)
 
-    accumulation_steps = cfg.training.gradient_accumulation_steps
-    opt.zero_grad(set_to_none=True)
-
     for it in range(start_it, cfg.steps):
         if it > 0 and it % cfg.validation_interval == 0:
             val_losses = validate(
@@ -172,15 +169,11 @@ def train_adapter(cfg: DictConfig) -> None:  # noqa: PLR0912
         sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
         loss = mae_loss + mse_loss + sc_loss
 
-        loss = loss / accumulation_steps
-
+        opt.zero_grad(set_to_none=True)
         loss.backward()
-
-        if (it + 1) % accumulation_steps == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
-            opt.step()
-            scheduler.step()
-            opt.zero_grad(set_to_none=True)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
+        opt.step()
+        scheduler.step()
 
         if it % cfg.log_interval == 0:
             log_data = {

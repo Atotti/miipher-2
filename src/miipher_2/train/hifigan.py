@@ -240,11 +240,6 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
 
     # --- 学習ループ ---
     dl_iter = iter(dl)
-    accumulation_steps = cfg.gradient_accumulation_steps
-
-    optim_g.zero_grad()
-    optim_d.zero_grad()
-
     for step in range(start_step, cfg.steps):
         if hasattr(cfg, "validation_interval") and step > 0 and step % cfg.validation_interval == 0:
             val_losses = validate(
@@ -270,6 +265,8 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
             clean_22k = clean_22k.unsqueeze(1)
 
         # --- Generatorの学習 ---
+        optim_g.zero_grad()
+
         # HuBERT特徴量抽出
         with torch.no_grad():
             feat = cleaner(noisy_16k)
@@ -303,10 +300,12 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
 
         loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
 
-        loss_g_scaled = loss_gen_all / accumulation_steps
-        loss_g_scaled.backward()
+        loss_gen_all.backward()
+        optim_g.step()
 
         # --- Discriminatorの学習 ---
+        optim_d.zero_grad()
+
         y_g_hat_detached = y_g_hat.detach()
 
         # MPD
@@ -318,16 +317,8 @@ def train_hifigan(cfg: DictConfig) -> None:  # noqa: PLR0912
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
 
         loss_disc_all = loss_disc_s + loss_disc_f
-
-        loss_d_scaled = loss_disc_all / accumulation_steps
-        loss_d_scaled.backward()
-
-        # --- パラメータ更新 ---
-        if (step + 1) % accumulation_steps == 0:
-            optim_g.step()
-            optim_d.step()
-            optim_g.zero_grad()
-            optim_d.zero_grad()
+        loss_disc_all.backward()
+        optim_d.step()
 
         # ---- ログ出力とチェックポイント保存 ----
         if (step % cfg.log_interval) == 0:
