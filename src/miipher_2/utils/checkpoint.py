@@ -5,9 +5,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from omegaconf import DictConfig
-
 import wandb
+from omegaconf import DictConfig
 
 
 def save_checkpoint(

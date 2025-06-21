@@ -44,10 +44,7 @@ def build_accelerator(cfg: DictConfig) -> tuple[Accelerator, Any]:
     )
 
     # ログレベルの設定
-    logger = get_logger(
-        __name__,
-        log_level="INFO" if accelerator.is_main_process else "WARNING"
-    )
+    logger = get_logger(__name__, log_level="INFO" if accelerator.is_main_process else "WARNING")
 
     # WandBトラッカーの初期化（メインプロセスのみ）
     if accelerator.is_main_process and cfg.wandb.get("enabled", False):
@@ -57,14 +54,16 @@ def build_accelerator(cfg: DictConfig) -> tuple[Accelerator, Any]:
         accelerator.init_trackers(
             project_name=cfg.wandb.project,
             config=config_dict,
-            init_kwargs={"wandb": {
-                "name": cfg.wandb.get("name", None),
-                "tags": cfg.wandb.get("tags", []),
-                "notes": cfg.wandb.get("notes", ""),
-                "entity": cfg.wandb.get("entity", None),
-                "resume": "allow",  # チェックポイントからの再開を許可
-                "id": cfg.wandb.get("id", None),  # 固定IDで再開
-            }}
+            init_kwargs={
+                "wandb": {
+                    "name": cfg.wandb.get("name", None),
+                    "tags": cfg.wandb.get("tags", []),
+                    "notes": cfg.wandb.get("notes", ""),
+                    "entity": cfg.wandb.get("entity", None),
+                    "resume": "allow",  # チェックポイントからの再開を許可
+                    "id": cfg.wandb.get("id", None),  # 固定IDで再開
+                }
+            },
         )
         logger.info("WandB tracker initialized")
 

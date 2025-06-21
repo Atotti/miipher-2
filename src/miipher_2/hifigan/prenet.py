@@ -41,11 +41,10 @@ class MHubertToMel(nn.Module):
             # より正確な時間軸リサンプリング（long sequences対応）
             # exact target lengthを計算してsize指定でリサンプリング
             input_length = x.size(-1)
-            target_length = int(math.ceil(input_length * self.scale_factor))
+            target_length = math.ceil(input_length * self.scale_factor)
             return F.interpolate(x, size=target_length, mode="linear", align_corners=False)
-        else:
-            # 従来の scale_factor 方式（non-integer ratioで drift する可能性）
-            return F.interpolate(x, scale_factor=self.scale_factor, mode="linear", align_corners=False)
+        # 従来の scale_factor 方式（non-integer ratioで drift する可能性）
+        return F.interpolate(x, scale_factor=self.scale_factor, mode="linear", align_corners=False)
 
 
 class SincResampler(nn.Module):
@@ -53,7 +52,8 @@ class SincResampler(nn.Module):
     バンド制限付きSinc補間によるリサンプリング（実験用）
     長尺音声での位相ドリフトを最小化
     """
-    def __init__(self, input_sr: float, output_sr: float, lowpass_filter_width: int = 6):
+
+    def __init__(self, input_sr: float, output_sr: float, lowpass_filter_width: int = 6) -> None:
         super().__init__()
         self.resampling_ratio = output_sr / input_sr
         self.lowpass_filter_width = lowpass_filter_width
@@ -65,5 +65,5 @@ class SincResampler(nn.Module):
         # PyTorchの実装では複雑になるため、現在は線形補間のfallback
         # 実際の実装ではtorchaudio.functionalのresampleを使用することを推奨
         input_length = x.size(-1)
-        target_length = int(math.ceil(input_length * self.resampling_ratio))
+        target_length = math.ceil(input_length * self.resampling_ratio)
         return F.interpolate(x, size=target_length, mode="linear", align_corners=False)

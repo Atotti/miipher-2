@@ -90,10 +90,24 @@ def validate(
 
             # Mel L1 loss
             y_mel = mel_spectrogram(
-                clean_22k_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+                clean_22k_aligned.squeeze(1),
+                h.n_fft,
+                h.num_mels,
+                h.sampling_rate,
+                h.hop_size,
+                h.win_size,
+                h.fmin,
+                h.fmax_for_loss,
             )
             y_g_hat_mel = mel_spectrogram(
-                y_g_hat_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate, h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
+                y_g_hat_aligned.squeeze(1),
+                h.n_fft,
+                h.num_mels,
+                h.sampling_rate,
+                h.hop_size,
+                h.win_size,
+                h.fmin,
+                h.fmax_for_loss,
             )
             loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
 
@@ -111,22 +125,28 @@ def validate(
             loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
             loss_disc_all = loss_disc_s + loss_disc_f
 
-        # Gather losses from all processes
-        loss_gen_all_gathered = accelerator.gather(loss_gen_all.unsqueeze(0))
-        loss_disc_all_gathered = accelerator.gather(loss_disc_all.unsqueeze(0))
-        loss_mel_gathered = accelerator.gather(loss_mel.unsqueeze(0))
-        loss_fm_gathered = accelerator.gather((loss_fm_s + loss_fm_f).unsqueeze(0))
-        loss_adv_gathered = accelerator.gather((loss_gen_s + loss_gen_f).unsqueeze(0))
-        batch_size_gathered = accelerator.gather(torch.tensor(clean_16k.size(0), device=accelerator.device))
+        # ★★★ 分散環境での安全な損失集約（パディングによるクラッシュ回避）
+        loss_tensor = torch.stack(
+            [loss_gen_all, loss_disc_all, loss_mel, loss_fm_s + loss_fm_f, loss_gen_s + loss_gen_f]
+        )
+        batch_size_tensor = torch.tensor(clean_16k.size(0), device=accelerator.device, dtype=torch.float32)
 
-        # Accumulate losses
+        # プロセス間でテンソルサイズを揃える（最終バッチ対策）
+        loss_tensor_padded = accelerator.pad_across_processes(loss_tensor, dim=0, pad_index=0.0)
+        batch_size_padded = accelerator.pad_across_processes(batch_size_tensor, dim=0, pad_index=0.0)
+
+        # 安全にgatherで集約
+        loss_tensor_gathered = accelerator.gather(loss_tensor_padded)
+        batch_size_gathered = accelerator.gather(batch_size_padded)
+
+        # メインプロセスでのみ蓄積（重複回避）
         if accelerator.is_main_process:
             batch_size = batch_size_gathered.sum().item()
-            total_losses["generator_total"] += loss_gen_all_gathered.mean().item() * batch_size
-            total_losses["discriminator_total"] += loss_disc_all_gathered.mean().item() * batch_size
-            total_losses["mel_l1"] += loss_mel_gathered.mean().item() * batch_size
-            total_losses["feature_matching"] += loss_fm_gathered.mean().item() * batch_size
-            total_losses["generator_adv"] += loss_adv_gathered.mean().item() * batch_size
+            total_losses["generator_total"] += loss_tensor_gathered[0].sum().item()
+            total_losses["discriminator_total"] += loss_tensor_gathered[1].sum().item()
+            total_losses["mel_l1"] += loss_tensor_gathered[2].sum().item()
+            total_losses["feature_matching"] += loss_tensor_gathered[3].sum().item()
+            total_losses["generator_adv"] += loss_tensor_gathered[4].sum().item()
             total_count += batch_size
 
     # Calculate average losses
@@ -153,16 +173,8 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     print_main(accelerator, f"Mixed precision: {accelerator.mixed_precision}")
 
     # データセットとデータローダー
-    train_dataset = CleanVocoderDataset(
-        cfg.dataset.path_pattern,
-        shuffle=cfg.dataset.shuffle,
-        num_workers=cfg.loader.num_workers  # マルチワーカー対応
-    )
-    val_dataset = CleanVocoderDataset(
-        cfg.dataset.val_path_pattern,
-        shuffle=False,
-        num_workers=cfg.loader.num_workers  # マルチワーカー対応
-    )
+    train_dataset = CleanVocoderDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
+    val_dataset = CleanVocoderDataset(cfg.dataset.val_path_pattern, shuffle=False)
 
     train_dl = DataLoader(
         train_dataset,
@@ -218,19 +230,24 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     # チェックポイントの読み込み
     start_step = 0
     checkpoint_dir = pathlib.Path(cfg.save_dir)
-    if (checkpoint_dir / "pytorch_model.bin").exists():
+
+    # ★★★ ディレクトリの存在確認（ファイルではなく）
+    if checkpoint_dir.is_dir() and any(checkpoint_dir.iterdir()):
         print_main(accelerator, f"Loading checkpoint from {checkpoint_dir}")
-        accelerator.load_state(checkpoint_dir)
-        step_file = checkpoint_dir / "step.txt"
-        if step_file.exists():
-            start_step = int(step_file.read_text()) + 1
-            print_main(accelerator, f"Resuming from step {start_step}")
-    else:
-        # 事前学習済み重みの読み込み
-        if cfg.get("pretrained_gen"):
-            state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu")
-            accelerator.unwrap_model(generator).load_state_dict(state_dict_g["generator"])
-            print_main(accelerator, f"Loaded pre-trained Generator from: {cfg.pretrained_gen}")
+        try:
+            accelerator.load_state(checkpoint_dir)
+            step_file = checkpoint_dir / "step.txt"
+            if step_file.exists():
+                start_step = int(step_file.read_text()) + 1
+                print_main(accelerator, f"Resuming from step {start_step}")
+        except Exception as e:
+            print_main(accelerator, f"Failed to load checkpoint: {e}")
+            print_main(accelerator, "Starting training from scratch")
+    # 事前学習済み重みの読み込み
+    elif cfg.get("pretrained_gen"):
+        state_dict_g = torch.load(cfg.pretrained_gen, map_location="cpu")
+        accelerator.unwrap_model(generator).load_state_dict(state_dict_g["generator"])
+        print_main(accelerator, f"Loaded pre-trained Generator from: {cfg.pretrained_gen}")
 
     # データローダーのイテレーター作成
     train_iter = iter(train_dl)
@@ -242,16 +259,14 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     for step in range(start_step, cfg.steps):
         # 検証の実行
         if step > 0 and step % cfg.validation_interval == 0:
-            val_losses = validate(
-                h, hubert_extractor, prenet, generator, mpd, msd, val_dl, accelerator, cfg
-            )
+            val_losses = validate(h, hubert_extractor, prenet, generator, mpd, msd, val_dl, accelerator, cfg)
             log_metrics(accelerator, val_losses, step)
             if val_losses:  # val_lossesが空でない場合のみログ出力
                 print_main(
                     accelerator,
                     f"[Pre-train] Step:{step:>7} | "
                     f"Val Gen Loss: {val_losses['val_loss/generator_total']:.4f}, "
-                    f"Val Disc Loss: {val_losses['val_loss/discriminator_total']:.4f}"
+                    f"Val Disc Loss: {val_losses['val_loss/discriminator_total']:.4f}",
                 )
 
         # データの取得
@@ -261,8 +276,8 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
             train_iter = iter(train_dl)
             clean_16k, clean_22k = next(train_iter)
 
-        # Generator学習
-        with accelerator.accumulate(generator):
+        # ★★★ すべての学習対象モデルを1つのコンテキストで管理（計算グラフ安全性確保）
+        with accelerator.accumulate(prenet, generator, mpd, msd):
             with accelerator.autocast():
                 if clean_22k.dim() == 2:
                     clean_22k = clean_22k.unsqueeze(1)
@@ -279,39 +294,9 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
                 clean_22k_aligned = clean_22k[:, :, :min_len]
                 y_g_hat_aligned = y_g_hat[:, :, :min_len]
 
-                # メルスペクトログラム損失
-                y_mel = mel_spectrogram(
-                    clean_22k_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,
-                    h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
-                )
-                y_g_hat_mel = mel_spectrogram(
-                    y_g_hat_aligned.squeeze(1), h.n_fft, h.num_mels, h.sampling_rate,
-                    h.hop_size, h.win_size, h.fmin, h.fmax_for_loss
-                )
-                loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
+            # --- Discriminator学習（先に実行） ---
+            optim_d.zero_grad()
 
-                # GAN損失
-                y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k_aligned, y_g_hat_aligned)
-                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k_aligned, y_g_hat_aligned)
-
-                loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
-                loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
-                loss_gen_f, _ = generator_loss(y_df_hat_g)
-                loss_gen_s, _ = generator_loss(y_ds_hat_g)
-
-                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
-
-            # Generator逆伝播
-            accelerator.backward(loss_gen_all)
-
-            if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(itertools.chain(prenet.parameters(), generator.parameters()), max_norm=cfg.get("max_grad_norm", 1.0))
-
-            optim_g.step()
-            optim_g.zero_grad()
-
-        # Discriminator学習
-        with accelerator.accumulate(mpd):
             with accelerator.autocast():
                 # Discriminatorの損失（detach済みのGeneratorの出力を使用）
                 y_df_hat_r, y_df_hat_g, _, _ = mpd(clean_22k_aligned, y_g_hat_aligned.detach())
@@ -325,10 +310,58 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
             accelerator.backward(loss_disc_all)
 
             if accelerator.sync_gradients:
-                accelerator.clip_grad_norm_(itertools.chain(mpd.parameters(), msd.parameters()), max_norm=cfg.get("max_grad_norm", 1.0))
+                accelerator.clip_grad_norm_(
+                    itertools.chain(mpd.parameters(), msd.parameters()), max_norm=cfg.get("max_grad_norm", 1.0)
+                )
 
             optim_d.step()
-            optim_d.zero_grad()
+
+            # --- Generator学習（後に実行） ---
+            optim_g.zero_grad()
+
+            with accelerator.autocast():
+                # メルスペクトログラム損失
+                y_mel = mel_spectrogram(
+                    clean_22k_aligned.squeeze(1),
+                    h.n_fft,
+                    h.num_mels,
+                    h.sampling_rate,
+                    h.hop_size,
+                    h.win_size,
+                    h.fmin,
+                    h.fmax_for_loss,
+                )
+                y_g_hat_mel = mel_spectrogram(
+                    y_g_hat_aligned.squeeze(1),
+                    h.n_fft,
+                    h.num_mels,
+                    h.sampling_rate,
+                    h.hop_size,
+                    h.win_size,
+                    h.fmin,
+                    h.fmax_for_loss,
+                )
+                loss_mel = F.l1_loss(y_mel, y_g_hat_mel) * 45
+
+                # GAN損失（勾配が必要なのでdetachしない）
+                y_df_hat_r, y_df_hat_g, fmap_f_r, fmap_f_g = mpd(clean_22k_aligned, y_g_hat_aligned)
+                y_ds_hat_r, y_ds_hat_g, fmap_s_r, fmap_s_g = msd(clean_22k_aligned, y_g_hat_aligned)
+
+                loss_fm_f = feature_loss(fmap_f_r, fmap_f_g)
+                loss_fm_s = feature_loss(fmap_s_r, fmap_s_g)
+                loss_gen_f, _ = generator_loss(y_df_hat_g)
+                loss_gen_s, _ = generator_loss(y_ds_hat_g)
+                loss_gen_all = loss_gen_s + loss_gen_f + loss_fm_s + loss_fm_f + loss_mel
+
+            # Generator逆伝播
+            accelerator.backward(loss_gen_all)
+
+            if accelerator.sync_gradients:
+                accelerator.clip_grad_norm_(
+                    itertools.chain(prenet.parameters(), generator.parameters()), max_norm=cfg.get("max_grad_norm", 1.0)
+                )
+
+            optim_g.step()
 
         # ログ出力
         if step % cfg.log_interval == 0:
@@ -338,7 +371,7 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
                 "pretrain/train/mel_l1": loss_mel.item(),
                 "pretrain/train/feature_matching": (loss_fm_s + loss_fm_f).item(),
                 "pretrain/train/generator_adv": (loss_gen_s + loss_gen_f).item(),
-                "pretrain/lr": optim_g.param_groups[0]['lr'],
+                "pretrain/lr": optim_g.param_groups[0]["lr"],
             }
             log_metrics(accelerator, metrics, step)
             print_main(
@@ -362,9 +395,12 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
 
                 if cfg.wandb.get("log_audio", False):
                     import wandb
-                    log_metrics(accelerator, {
-                        "pretrain/audio/generated_sample": wandb.Audio(str(audio_path), sample_rate=h.sampling_rate)
-                    }, step)
+
+                    log_metrics(
+                        accelerator,
+                        {"pretrain/audio/generated_sample": wandb.Audio(str(audio_path), sample_rate=h.sampling_rate)},
+                        step,
+                    )
 
         # チェックポイントの保存
         if step > 0 and step % cfg.checkpoint.save_interval == 0:

@@ -8,7 +8,7 @@ class DataCollatorAudioPad:
     Returns dict ready for Trainer with proper mask handling.
     """
 
-    def __init__(self, padding_value: float = 0.0):
+    def __init__(self, padding_value: float = 0.0) -> None:
         """
         Args:
             padding_value: Value to use for padding (default: 0.0 for audio)
@@ -27,26 +27,18 @@ class DataCollatorAudioPad:
         max_target_len = max(target_lengths)
 
         # Pad inputs and create attention masks
-        batch_in = torch.stack([
-            F.pad(x, (0, max_input_len - x.size(-1)), value=self.padding_value)
-            for x in inputs
-        ])
+        batch_in = torch.stack([F.pad(x, (0, max_input_len - x.size(-1)), value=self.padding_value) for x in inputs])
 
-        batch_lbl = torch.stack([
-            F.pad(y, (0, max_target_len - y.size(-1)), value=self.padding_value)
-            for y in targets
-        ])
+        batch_lbl = torch.stack([F.pad(y, (0, max_target_len - y.size(-1)), value=self.padding_value) for y in targets])
 
         # Create attention masks (1 for real data, 0 for padding)
-        input_attention_mask = torch.stack([
-            F.pad(torch.ones(length), (0, max_input_len - length), value=0.0)
-            for length in input_lengths
-        ])
+        input_attention_mask = torch.stack(
+            [F.pad(torch.ones(length), (0, max_input_len - length), value=0.0) for length in input_lengths]
+        )
 
-        target_attention_mask = torch.stack([
-            F.pad(torch.ones(length), (0, max_target_len - length), value=0.0)
-            for length in target_lengths
-        ])
+        target_attention_mask = torch.stack(
+            [F.pad(torch.ones(length), (0, max_target_len - length), value=0.0) for length in target_lengths]
+        )
 
         return {
             "input_values": batch_in,
@@ -62,7 +54,7 @@ class DataCollatorAudioPadV2:
     Handles LayerNorm statistics properly by masking padding regions.
     """
 
-    def __init__(self, padding_value: float = 0.0, mask_padding_in_stats: bool = True):
+    def __init__(self, padding_value: float = 0.0, mask_padding_in_stats: bool = True) -> None:
         """
         Args:
             padding_value: Value to use for padding
@@ -89,26 +81,28 @@ class DataCollatorAudioPadV2:
         else:
             effective_padding_value = self.padding_value
 
-        batch_in = torch.stack([
-            F.pad(x, (0, max_input_len - x.size(-1)), value=effective_padding_value)
-            for x in inputs
-        ])
+        batch_in = torch.stack(
+            [F.pad(x, (0, max_input_len - x.size(-1)), value=effective_padding_value) for x in inputs]
+        )
 
-        batch_lbl = torch.stack([
-            F.pad(y, (0, max_target_len - y.size(-1)), value=effective_padding_value)
-            for y in targets
-        ])
+        batch_lbl = torch.stack(
+            [F.pad(y, (0, max_target_len - y.size(-1)), value=effective_padding_value) for y in targets]
+        )
 
         # Binary attention masks
-        input_attention_mask = torch.stack([
-            F.pad(torch.ones(length, dtype=torch.bool), (0, max_input_len - length), value=False)
-            for length in input_lengths
-        ])
+        input_attention_mask = torch.stack(
+            [
+                F.pad(torch.ones(length, dtype=torch.bool), (0, max_input_len - length), value=False)
+                for length in input_lengths
+            ]
+        )
 
-        target_attention_mask = torch.stack([
-            F.pad(torch.ones(length, dtype=torch.bool), (0, max_target_len - length), value=False)
-            for length in target_lengths
-        ])
+        target_attention_mask = torch.stack(
+            [
+                F.pad(torch.ones(length, dtype=torch.bool), (0, max_target_len - length), value=False)
+                for length in target_lengths
+            ]
+        )
 
         return {
             "input_values": batch_in,

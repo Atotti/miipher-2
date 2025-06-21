@@ -1,6 +1,7 @@
-from collections.abc import Callable
 import functools
-from typing import Any
+from collections.abc import Callable
+from types import MethodType
+from typing import Any, Optional
 
 import torch
 from omegaconf import DictConfig
@@ -11,55 +12,99 @@ from miipher_2.extractors.hubert import HubertExtractor
 
 
 class FeatureCleaner(nn.Module):
-    def __init__(self, cfg_model: DictConfig) -> None:
+    """
+    HuBERTの特徴量にAdapterを適用して清浄化するモジュール
+    メモリ効率向上のため、外部からHubertExtractorを注入可能
+    """
+
+    def __init__(self, cfg_model: DictConfig, hubert_extractor: HubertExtractor | None = None) -> None:
         super().__init__()
-        self.extractor = HubertExtractor(
-            model_name=cfg_model.hubert_model_name,
-            layer=cfg_model.hubert_layer,
-        )
 
-        # ベースとなるHuBERTの全パラメータを凍結
-        self.extractor.hubert.eval()
-        for param in self.extractor.hubert.parameters():
-            param.requires_grad = False
+        # 外部から提供されなければ、自分で作成する
+        if hubert_extractor is None:
+            self.extractor = HubertExtractor(
+                model_name=cfg_model.hubert_model_name,
+                layer=cfg_model.hubert_layer,
+            )
+        else:
+            # 外部から注入されたインスタンスを使用（メモリ効率）
+            self.extractor = hubert_extractor
 
-        hubert_dim = self.extractor.hubert.config.hidden_size
+        self.cfg_model = cfg_model
 
-        num_layers_to_patch = cfg_model.hubert_layer + 1
+        # Adapterを初期化
+        self._initialize_adapters()
 
-        self.adapters = nn.ModuleList(
-            [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
-        )
+        # HuBERTの特定レイヤーにAdapterを挿入
+        self._patch_hubert_layers()
 
-        # Adapterパッチ適用（DDP/FSDP対応版）
-        for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
-            adapter_module = self.adapters[i]
+    def _initialize_adapters(self) -> None:
+        """Adapterモジュールを初期化"""
+        hubert_config = self.extractor.hubert.config
 
-            # 動的に元のforward関数を取得する関数（バウンドメソッド問題を回避）
-            def patched_forward(
-                hidden_states: torch.Tensor,
-                layer_idx: int = i,
-                adapter_mod: ParallelAdapter = adapter_module,
-            ) -> torch.Tensor:
-                # 毎回動的に元のforwardを取得（DDP/FSDPで置き換わっても対応）
-                original_ff = self.extractor.hubert.encoder.layers[layer_idx].feed_forward
+        # パッチ対象レイヤー数を制限（計算量とVRAM節約）
+        num_layers_to_patch = self.cfg_model.get("hubert_layer", hubert_config.num_hidden_layers) + 1
+        num_layers_to_patch = min(num_layers_to_patch, hubert_config.num_hidden_layers)
 
-                # 元のFeedForward(MLP)の出力を計算
-                # original_ffはモジュールなので、__call__を使用
-                ff_output = original_ff(hidden_states)
+        self.adapters = nn.ModuleList()
 
-                # 同じ入力からAdapterの出力を計算
-                adapter_output = adapter_mod(hidden_states)
+        for _ in range(num_layers_to_patch):
+            adapter = ParallelAdapter(
+                dim=hubert_config.hidden_size,
+                hidden=self.cfg_model.get("adapter_hidden_dim", 1024),  # 正しい引数名を使用
+            )
+            self.adapters.append(adapter)
 
-                # 元のMLP出力にアダプターの出力を加算する
-                return ff_output + adapter_output
+    def _patch_hubert_layers(self) -> None:
+        """
+        HuBERTレイヤーのFFNにAdapterを適用（正しいforward methodパッチ）
+        """
+        # パッチ対象レイヤー数を制限
+        num_layers_to_patch = len(self.adapters)
 
-            # feed_forwardモジュールのforwardメソッドを新しい関数で上書き
-            blk.feed_forward.forward = functools.partial(patched_forward, layer_idx=i, adapter_mod=adapter_module)
+        for layer_idx, (layer, adapter) in enumerate(
+            zip(self.extractor.hubert.encoder.layer[:num_layers_to_patch], self.adapters, strict=True)
+        ):
+            # ★★★ 正しいforward methodを保存（chunk_feed_forwardは存在しない）
+            original_forward = layer.feed_forward.forward
 
-            # LayerNormのパラメータは学習可能にする
-            for param in blk.final_layer_norm.parameters():
-                param.requires_grad = True
+            # functools.partialを使用してbound method問題を回避
+            # これによりDDP/FSDPでも安全に動作する
+            patched_forward = functools.partial(
+                self._adapter_forward,
+                original_forward=original_forward,
+                adapter=adapter,
+                layer_idx=layer_idx,
+            )
+
+            # ★★★ torch.nn.ModuleにMethodTypeでバインド
+            layer.feed_forward.forward = MethodType(patched_forward, layer.feed_forward)
+
+    def _adapter_forward(
+        self,
+        attention_output: torch.Tensor,
+        *,
+        original_forward: Callable[[torch.Tensor], torch.Tensor],
+        adapter: ParallelAdapter,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        """
+        Adapterを含むFFNのforward実装（正しいシグネチャ）
+        """
+        # 元のFFN処理
+        ff_output = original_forward(attention_output)
+
+        # Adapter処理（並列結合）
+        adapter_output = adapter(attention_output)
+
+        # 残差接続
+        return ff_output + adapter_output
 
     def forward(self, wav16: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            wav16: 16kHzの音声波形 (B, T)
+        Returns:
+            特徴量 (B, hidden_size, T')
+        """
         return self.extractor(wav16)

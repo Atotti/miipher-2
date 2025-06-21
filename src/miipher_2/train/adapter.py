@@ -1,11 +1,14 @@
+import itertools
 import pathlib
+from functools import partial
 from typing import Any
 
 import torch
 from omegaconf import DictConfig
-from torch import nn, optim
+from torch import Tensor, nn, optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import get_scheduler
 
 from miipher_2.accelerate_utils import build_accelerator, log_metrics, print_main, setup_random_seeds, worker_init_fn
@@ -15,12 +18,12 @@ from miipher_2.model.feature_cleaner import FeatureCleaner
 
 
 def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
-    noisy_tensors, clean_tensors = zip(*batch, strict=False)
-    noisy_tensors = [x.squeeze(0) for x in noisy_tensors]
-    clean_tensors = [x.squeeze(0) for x in clean_tensors]
-    noisy = pad_sequence(noisy_tensors, batch_first=True, padding_value=0.0)
-    clean = pad_sequence(clean_tensors, batch_first=True, padding_value=0.0)
-    return noisy, clean
+    """バッチ内のテンソルをパディングして統一"""
+    noisy_list, clean_list = zip(*batch, strict=False)
+    # pad_sequenceを使用してバッチ次元でパディング
+    noisy_batch = pad_sequence(noisy_list, batch_first=True)  # (B, max_len)
+    clean_batch = pad_sequence(clean_list, batch_first=True)  # (B, max_len)
+    return noisy_batch, clean_batch
 
 
 @torch.no_grad()
@@ -33,48 +36,73 @@ def validate(
     cfg: DictConfig,
 ) -> dict[str, float]:
     """
-    Adapter検証関数（Accelerate対応版）
+    検証の実行（分散対応 - パディングによるクラッシュ回避）
     """
     model.eval()
     total_losses = {"total": 0.0, "mae": 0.0, "mse": 0.0, "sc": 0.0}
     total_count = 0
 
-    limit_batches = cfg.get("validation_batches", None)
-
-    for i, (noisy, clean) in enumerate(val_dl):
-        if limit_batches is not None and i >= limit_batches:
-            break
-
+    for noisy, clean in val_dl:
         with accelerator.autocast():
+            # ターゲット特徴量の計算（勾配なし）
             target = target_model(clean)
+
+            # 予測の計算
             pred = model(noisy)
 
+            # 長さの調整
             min_len = min(pred.size(2), target.size(2))
-            pred, target = pred[:, :, :min_len], target[:, :, :min_len]
+            pred = pred[:, :, :min_len]
+            target = target[:, :, :min_len]
 
+            # 損失の計算（学習ループと同じ正規化）
             mae_loss = loss_fns["mae"](pred, target)
             mse_loss = loss_fns["mse"](pred, target)
-            sc_loss = (pred - target).pow(2).sum() / (target.pow(2).sum() + 1e-9)
+
+            # ★★★ Spectral Convergence Loss: 学習ループと同じ正規化方式
+            pred_power = pred.pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の平均パワー
+            target_power = target.pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の平均パワー
+            diff_power = (pred - target).pow(2).mean(dim=(1, 2))  # (B,) - バッチ毎の差分パワー
+            sc_loss = (diff_power / (target_power + 1e-9)).mean()  # バッチ全体の平均
+
             loss = mae_loss + mse_loss + sc_loss
 
-        # Accelerateのgatherを使用してマルチGPUでの損失を集約
-        all_losses = accelerator.gather(torch.stack([loss, mae_loss, mse_loss, sc_loss]))
-        batch_sizes = accelerator.gather(torch.tensor(noisy.size(0), device=accelerator.device))
+        # ★★★ 分散環境での安全な損失集約（パディングによるクラッシュ回避）
+        loss_tensor = torch.stack([loss, mae_loss, mse_loss, sc_loss])
+        batch_size_tensor = torch.tensor(noisy.size(0), device=accelerator.device, dtype=torch.float32)
 
-        total_losses["total"] += all_losses[0].sum().item()
-        total_losses["mae"] += all_losses[1].sum().item()
-        total_losses["mse"] += all_losses[2].sum().item()
-        total_losses["sc"] += all_losses[3].sum().item()
-        total_count += batch_sizes.sum().item()
+        # プロセス間でテンソルサイズを揃える（最終バッチ対策）
+        loss_tensor_padded = accelerator.pad_across_processes(loss_tensor, dim=0, pad_index=0.0)
+        batch_size_padded = accelerator.pad_across_processes(batch_size_tensor, dim=0, pad_index=0.0)
 
-    avg_losses = {f"val_loss/{key}": val / total_count for key, val in total_losses.items()}
+        # 安全にgatherで集約
+        all_losses = accelerator.gather(loss_tensor_padded)
+        batch_sizes = accelerator.gather(batch_size_padded)
+
+        # メインプロセスでのみ蓄積（重複回避）
+        if accelerator.is_main_process:
+            total_losses["total"] += all_losses[0].sum().item()
+            total_losses["mae"] += all_losses[1].sum().item()
+            total_losses["mse"] += all_losses[2].sum().item()
+            total_losses["sc"] += all_losses[3].sum().item()
+            total_count += batch_sizes.sum().item()
+
+    # 平均損失計算（メインプロセスのみ）
+    if accelerator.is_main_process and total_count > 0:
+        avg_losses = {f"val_loss/{key}": val / total_count for key, val in total_losses.items()}
+    else:
+        avg_losses = {}
+
+    # すべてのプロセスに結果をブロードキャスト（同期確保）
+    avg_losses = accelerator.gather_for_metrics(avg_losses) if avg_losses else {}
+
     model.train()
     return avg_losses
 
 
 def train_adapter(cfg: DictConfig) -> None:
     """
-    Accelerateベースの並列Adapter学習
+    Accelerateベースの並列Adapter学習（統一チェックポイント管理）
     """
     # Acceleratorとロガーの初期化
     accelerator, logger = build_accelerator(cfg)
@@ -83,18 +111,8 @@ def train_adapter(cfg: DictConfig) -> None:
     setup_random_seeds(accelerator, cfg.get("seed", 42))
 
     # データローダーの準備（再現性向上）
-    from functools import partial
-
-    train_ds = AdapterDataset(
-        cfg.dataset.path_pattern,
-        shuffle=cfg.dataset.shuffle,
-        num_workers=cfg.loader.num_workers  # マルチワーカー対応
-    )
-    val_ds = AdapterDataset(
-        cfg.dataset.val_path_pattern,
-        shuffle=False,
-        num_workers=cfg.loader.num_workers  # マルチワーカー対応
-    )
+    train_ds = AdapterDataset(cfg.dataset.path_pattern, shuffle=cfg.dataset.shuffle)
+    val_ds = AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False)
 
     train_dl = DataLoader(
         train_ds,
@@ -116,22 +134,23 @@ def train_adapter(cfg: DictConfig) -> None:
         worker_init_fn=partial(worker_init_fn, seed=cfg.get("seed", 42)),  # 再現性向上
     )
 
-    # モデルの準備（HuBERT重複ロード回避）
-    # 共有HuBERTエクストラクターを作成（メモリ効率化）
-    shared_extractor = HubertExtractor(
-        model_name=cfg.model.hubert_model_name,
-        layer=cfg.model.hubert_layer,
-    ).float().eval()
+    # モデルの準備（HuBERT重複ロード回避 - メモリ効率最適化）
+    # 最初に一度だけHubertExtractorを作成
+    shared_extractor = (
+        HubertExtractor(
+            model_name=cfg.model.hubert_model_name,
+            layer=cfg.model.hubert_layer,
+        )
+        .float()
+        .eval()
+    )
 
     # 共有エクストラクターの勾配を無効化
     for param in shared_extractor.parameters():
         param.requires_grad = False
 
-    # FeatureCleanerは内部でHuBERTを作成するが、共有エクストラクターを使用するよう修正
-    model = FeatureCleaner(cfg.model).float()
-
-    # FeatureCleanerの内部HuBERTを共有エクストラクターで置き換え（メモリ節約）
-    model.extractor = shared_extractor
+    # 作成したインスタンスを注入してFeatureCleanerを初期化（メモリ節約）
+    model = FeatureCleaner(cfg.model, hubert_extractor=shared_extractor).float()
 
     # target_modelは共有エクストラクターを直接使用
     target_model = shared_extractor
@@ -161,22 +180,32 @@ def train_adapter(cfg: DictConfig) -> None:
     mse_loss_fn = nn.MSELoss()
     loss_fns = {"mae": mae_loss_fn, "mse": mse_loss_fn}
 
+    # 進捗追跡とチェックポイント管理の統一
+    progress_bar = tqdm(range(cfg.steps), disable=not accelerator.is_main_process, desc="Training")
+    completed_steps = 0
+
+    # ★ 進捗バーとステップ数をAcceleratorの管理下に置く
+    checkpoint_state = {"completed_steps": completed_steps}
+    accelerator.register_for_checkpointing(progress_bar, checkpoint_state)
+
     # チェックポイントからの再開
-    start_step = 0
-    checkpoint_dir = pathlib.Path(cfg.save_dir)
-    if (checkpoint_dir / "pytorch_model.bin").exists():
-        print_main(accelerator, f"Loading checkpoint from {checkpoint_dir}")
+    resume_from_checkpoint = cfg.checkpoint.get("resume_from")
+    if resume_from_checkpoint:
+        print_main(accelerator, f"Resuming from checkpoint: {resume_from_checkpoint}")
+        accelerator.load_state(resume_from_checkpoint)
+        completed_steps = checkpoint_state["completed_steps"]
+        print_main(accelerator, f"Resuming from step {completed_steps}")
+    elif pathlib.Path(cfg.save_dir).exists() and any(pathlib.Path(cfg.save_dir).iterdir()):
+        # 自動検出による再開
+        print_main(accelerator, f"Auto-resuming from {cfg.save_dir}")
         try:
-            accelerator.load_state(checkpoint_dir)
-            # ステップ数の復元（必要に応じてファイルから読み込み）
-            step_file = checkpoint_dir / "step.txt"
-            if step_file.exists():
-                start_step = int(step_file.read_text()) + 1
-                print_main(accelerator, f"Resuming from step {start_step}")
+            accelerator.load_state(cfg.save_dir)
+            completed_steps = checkpoint_state["completed_steps"]
+            print_main(accelerator, f"Auto-resumed from step {completed_steps}")
         except Exception as e:
-            print_main(accelerator, f"Failed to load checkpoint from {checkpoint_dir}: {e}")
+            print_main(accelerator, f"Failed to auto-resume: {e}")
             print_main(accelerator, "Starting training from scratch")
-            start_step = 0
+            completed_steps = 0
 
     # データローダーのイテレーター作成
     train_iter = iter(train_dl)
@@ -186,12 +215,10 @@ def train_adapter(cfg: DictConfig) -> None:
     print_main(accelerator, f"Gradient accumulation steps: {accelerator.gradient_accumulation_steps}")
 
     # 学習ループ
-    for step in range(start_step, cfg.steps):
+    for step in range(completed_steps, cfg.steps):
         # 検証の実行
         if step > 0 and step % cfg.validation_interval == 0:
-            val_losses = validate(
-                model, target_model, val_dl, loss_fns, accelerator, cfg
-            )
+            val_losses = validate(model, target_model, val_dl, loss_fns, accelerator, cfg)
             log_metrics(accelerator, val_losses, step)
             print_main(accelerator, f"[Adapter] Step:{step:>7} | Validation Loss: {val_losses['val_loss/total']:.4f}")
 
@@ -235,6 +262,9 @@ def train_adapter(cfg: DictConfig) -> None:
             # 勾配クリッピング
             if accelerator.sync_gradients:
                 accelerator.clip_grad_norm_(model.parameters(), max_norm=cfg.optim.max_grad_norm)
+                # ★ 進捗バーとステップ数の更新
+                progress_bar.update(1)
+                checkpoint_state["completed_steps"] = step + 1
 
             opt.step()
             scheduler.step()
@@ -259,16 +289,16 @@ def train_adapter(cfg: DictConfig) -> None:
                 f"SC={sc_loss.item():.4f}",
             )
 
-        # チェックポイントの保存
+        # チェックポイントの保存（統一管理）
         if step > 0 and step % cfg.checkpoint.save_interval == 0:
-            print_main(accelerator, f"Saving checkpoint at step {step}")
-            accelerator.save_state(output_dir=cfg.save_dir, safe_serialization=False)
-            # ステップ数も保存
-            if accelerator.is_main_process:
-                (pathlib.Path(cfg.save_dir) / "step.txt").write_text(str(step))
+            output_dir = pathlib.Path(cfg.save_dir) / f"checkpoint_{step}"
+            print_main(accelerator, f"Saving unified checkpoint at step {step}")
+            accelerator.save_state(output_dir, safe_serialization=False)
 
     # 学習終了時の処理
     print_main(accelerator, "Training completed")
     if accelerator.is_main_process:
-        accelerator.save_state(output_dir=cfg.save_dir, safe_serialization=False)
+        final_output_dir = pathlib.Path(cfg.save_dir) / "final"
+        accelerator.save_state(final_output_dir, safe_serialization=False)
+        progress_bar.close()
         accelerator.end_training()
