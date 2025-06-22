@@ -35,9 +35,6 @@ lambda_stft: 1.0 # 不要かも
 lambda_mpd: 2.5
 lambda_msd: 2.5
 
-training:
-  gradient_accumulation_steps: 4
-
 # チェックポイントの保存先を事前学習用に変更
 save_dir: exp/hifigan_pretrain_layer_6_mhubert_147
 log_interval: 100
