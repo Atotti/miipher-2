@@ -1,35 +1,17 @@
-import argparse
-import pathlib
+import hydra
+from omegaconf import DictConfig
 
-from miipher_2.utils.infer import main as infer_main
+# `main`関数を`run_inference`にリネームして、より責務を明確にします
+from miipher_2.utils.infer import run_inference
 
 
-def parse() -> argparse.Namespace:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--adapter", type=pathlib.Path, required=True)
-    ap.add_argument("--vocoder", type=pathlib.Path, required=True)
-    ap.add_argument("--in", dest="wav_in", type=pathlib.Path, required=True)
-    ap.add_argument("--out", dest="wav_out", type=pathlib.Path, required=True)
-    ap.add_argument("--hubert-layer", type=int, default=9, help="HuBERT layer to use (0-based)")
-    return ap.parse_args()
+@hydra.main(version_base=None, config_path="../configs", config_name="infer")
+def main(cfg: DictConfig) -> None:
+    """
+    Hydra経由で設定を読み込み、推論処理を実行するエントリーポイント
+    """
+    run_inference(cfg)
 
 
 if __name__ == "__main__":
-    args = parse()
-    # Pass arguments to infer_main
-    import sys
-
-    sys.argv = [
-        sys.argv[0],
-        "--adapter",
-        str(args.adapter),
-        "--vocoder",
-        str(args.vocoder),
-        "--in",
-        str(args.wav_in),
-        "--out",
-        str(args.wav_out),
-        "--hubert-layer",
-        str(args.hubert_layer),
-    ]
-    infer_main()
+    main()

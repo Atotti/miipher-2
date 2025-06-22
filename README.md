@@ -51,7 +51,7 @@ uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_4_mhubert_14
 特定のチェックポイントから再開
 ```bash
 # Adapter学習の再開
-uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_12/checkpoint_5k.pt"
+uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_4_mhubert_147/checkpoint_87k.pt" --config-name adapter_layer_4_mhubert_147
 
 # HiFi-GAN pretrainの再開
 uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain_layer_12/checkpoint_5k.pt"

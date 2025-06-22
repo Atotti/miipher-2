@@ -10,6 +10,7 @@ class FleursRCorpus(Dataset):
 
     {root}/data/ja_jp/audio/train/train/xxxx.wav
     """
+
     def __init__(self, root: str, subset: str = "train", language: str = "ja_jp") -> None:
         """
         Args:
@@ -27,15 +28,12 @@ class FleursRCorpus(Dataset):
 
         self.audio_dir = self.data_dir / "audio" / self.subset / self.subset
 
-
         if not self.audio_dir.exists():
             msg = (
                 f"音声ディレクトリが見つかりません: {self.audio_dir}。 "
                 f"音声アーカイブ ({subset}.tar.gz など) が展開されていることを確認してください。"
             )
-            raise FileNotFoundError(
-                msg
-            )
+            raise FileNotFoundError(msg)
 
         # tsvファイルからメタデータを読み込む
         # カラム: id, path, raw_text, ... (ヘッダーなし)
@@ -47,7 +45,7 @@ class FleursRCorpus(Dataset):
                 header=None,
                 usecols=[0, 1, 2],
                 names=["speaker_id", "wav_name", "raw_text"],
-                on_bad_lines="warn"
+                on_bad_lines="warn",
             )
         except Exception as e:  # noqa: BLE001
             msg = f"TSVファイルの読み込みエラー: {tsv_path}: {e}"
@@ -64,13 +62,15 @@ class FleursRCorpus(Dataset):
 
             # 互換性のため、ファイルの存在を確認してから追加する
             if wav_path.is_file():
-                self.samples.append({
-                    "wav_path": str(wav_path),
-                    "speaker": speaker,
-                    "clean_text": row["raw_text"],
-                    "basename": f"{self.subset}_{speaker}_{wav_path.stem}",
-                    "lang_code": self.lang_code_out,
-                })
+                self.samples.append(
+                    {
+                        "wav_path": str(wav_path),
+                        "speaker": speaker,
+                        "clean_text": row["raw_text"],
+                        "basename": f"{self.subset}_{speaker}_{wav_path.stem}",
+                        "lang_code": self.lang_code_out,
+                    }
+                )
 
     def __getitem__(self, index: int) -> dict[str, str]:
         """

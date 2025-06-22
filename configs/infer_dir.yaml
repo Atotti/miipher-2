@@ -1,6 +1,12 @@
+# --- 一括処理の基本設定 ---
+input_dir: "/home/ayu/GitHub/miipher-plaoground/samples_8khz"   # 音声ファイルが入っているディレクトリ
+output_dir: "/home/ayu/GitHub/miipher-plaoground/open_miipher_2" # 修復後の音声を出力するディレクトリ
+
+# 処理対象とする音声ファイルの拡張子リスト
+extensions:
+  - ".wav"
+
 # --- 推論の基本設定 ---
-input_wav: "/home/ayu/GitHub/miipher-plaoground/samples_8khz/F001_R1_E2_M2_AA.wav"
-output_wav: "/home/ayu/GitHub/miipher-plaoground/open_miipher_2/F001_R1_E2_M2_AA.wav"
 device: "cuda" # "cuda" または "cpu"
 
 # --- チェックポイントのパス ---
