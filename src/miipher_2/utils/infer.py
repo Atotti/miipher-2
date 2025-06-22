@@ -3,7 +3,7 @@ import pathlib
 
 import torch
 
-from miipher_2.hifigan.generator import Generator
+from miipher_2.hifigan.models import Generator
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import load, save
 

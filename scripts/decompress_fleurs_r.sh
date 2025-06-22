@@ -2,7 +2,7 @@
 
 set -e
 
-cd data/download
+cd /home/ayu/datasets
 cd fleurs-r/data
 
 find . -type f -path "*/audio/*.tar.gz" -print0 |

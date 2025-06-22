@@ -13,8 +13,8 @@ loader:
   num_workers: 8
   pin_memory: true
 
-adapter_ckpt: exp/adapter_layer_4_mhubert_147/checkpoint_60k.pt
-pretrained_gen: exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_23k.pt
+adapter_ckpt: exp/adapter_layer_4_mhubert_147/adapter_final.pt
+pretrained_gen: exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_99.pt
 
 # ----- Generator アーキテクチャ -----
 upsample_rates:        [8, 8, 2, 2]
