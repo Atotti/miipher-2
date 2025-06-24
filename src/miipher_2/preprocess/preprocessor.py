@@ -29,6 +29,11 @@ class Preprocessor:
         self.degradation_model = DegradationApplier(cfg.preprocess.degradation)
         self.text2phone_dict: dict[str, str] = {}
         self.n_repeats = cfg.preprocess.n_repeats
+        # 特徴量キャッシュディレクトリのパスを追加
+        self.feature_cache_dir = cfg.preprocess.get("feature_cache_dir", None)
+        if self.feature_cache_dir:
+            self.feature_cache_dir = pathlib.Path(self.feature_cache_dir)
+            print(f"[INFO] Using feature cache from: {self.feature_cache_dir}")
 
     @torch.inference_mode()  # type: ignore
     def process_utterance(
@@ -45,6 +50,19 @@ class Preprocessor:
 
         with audio_file_path.open(mode="rb") as f:
             wav_bytes = f.read()
+
+        # ---- ここから変更 ----
+        # 事前にキャッシュされたHuBERT特徴量を読み込む
+        hubert_feat_bytes = None
+        if self.feature_cache_dir and self.feature_cache_dir.exists():
+            feat_path = self.feature_cache_dir / f"{basename}.pt"
+            if feat_path.exists():
+                with feat_path.open("rb") as f:
+                    hubert_feat_bytes = f.read()
+            else:
+                print(f"[WARNING] Feature cache not found for {basename}")
+        # ---- ここまで変更 ----
+
         samples: list[dict[str, bytes | str]] = []
         for i in range(self.n_repeats):
             degraded_speech = self.apply_noise(waveform)
@@ -63,6 +81,13 @@ class Preprocessor:
                 "degraded_speech.wav": buff.read(),
                 "resampled_speech.pth": webdataset.torch_dumps(waveform),
             }
+
+            # ---- ここから変更 ----
+            # webdatasetのサンプルに特徴量を追加
+            if hubert_feat_bytes:
+                sample["hubert.pt"] = hubert_feat_bytes
+            # ---- ここまで変更 ----
+
             samples.append(sample)
         return samples
 

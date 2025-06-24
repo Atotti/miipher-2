@@ -36,12 +36,19 @@ from miipher_2.utils.ema import EMA
 
 
 def collate_tensors(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
-    clean_16k_tensors, clean_22k_tensors = zip(*batch, strict=False)
-    clean_16k_tensors = [x.squeeze(0) for x in clean_16k_tensors]
+    # ---- ここから変更 ----
+    # 入力が (hubert_features, clean_22k) に変わる
+    hubert_features, clean_22k_tensors = zip(*batch, strict=False)
+
+    # HuBERT特徴量は時間次元(2)でパディング
+    hubert_features_list = list(hubert_features)
+    hubert_features_padded = torch.nn.utils.rnn.pad_sequence(hubert_features_list, batch_first=True).permute(0, 2, 1)
+
     clean_22k_tensors = [x.squeeze(0) for x in clean_22k_tensors]
-    clean_16k_padded = pad_sequence(clean_16k_tensors, batch_first=True)
     clean_22k_padded = pad_sequence(clean_22k_tensors, batch_first=True)
-    return clean_16k_padded, clean_22k_padded
+
+    return hubert_features_padded, clean_22k_padded
+    # ---- ここまで変更 ----
 
 
 class AttrDict(dict):
@@ -82,14 +89,14 @@ def validate(
     }
     total_count = 0
 
-    for i, (clean_16k, clean_22k) in enumerate(val_dl):
+    for i, (hubert_features, clean_22k) in enumerate(val_dl):
         if limit_batches is not None and i >= limit_batches:
             break
-        clean_16k, clean_22k = clean_16k.cuda(), clean_22k.cuda()
+        hubert_features, clean_22k = hubert_features.cuda(), clean_22k.cuda()
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
-        feat = hubert_extractor(clean_16k)
+        feat = hubert_features
         y_g_hat_prenet = prenet(feat)
         y_g_hat = generator(y_g_hat_prenet)
 
@@ -120,7 +127,7 @@ def validate(
         loss_disc_s, _, _ = discriminator_loss(y_ds_hat_r, y_ds_hat_g)
         loss_disc_all = loss_disc_s + loss_disc_f
 
-        batch_size = clean_16k.size(0)
+        batch_size = hubert_features.size(0)
         total_losses["generator_total"] += loss_gen_all.item() * batch_size
         total_losses["discriminator_total"] += loss_disc_all.item() * batch_size
         total_losses["mel_l1"] += loss_mel.item() * batch_size
@@ -261,17 +268,22 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
             )
 
         try:
-            clean_16k, clean_22k = next(dl_iter)
+            # ---- 入力変数を変更 ----
+            hubert_features, clean_22k = next(dl_iter)
         except StopIteration:
             dl_iter = iter(dl)
-            clean_16k, clean_22k = next(dl_iter)
+            hubert_features, clean_22k = next(dl_iter)
 
-        clean_16k, clean_22k = clean_16k.cuda(), clean_22k.cuda()
+        hubert_features, clean_22k = hubert_features.cuda(), clean_22k.cuda()
         if clean_22k.dim() == 2:
             clean_22k = clean_22k.unsqueeze(1)
 
-        with torch.no_grad():
-            feat = hubert_extractor(clean_16k)
+        # ---- 特徴量抽出部分を削除 ----
+        # with torch.no_grad():
+        #     feat = hubert_extractor(clean_16k)
+        # 上記を以下に置き換え
+        feat = hubert_features
+
         with autocast(enabled=True):
             y_g_hat = generator_modules.generator(generator_modules.prenet(feat))
 

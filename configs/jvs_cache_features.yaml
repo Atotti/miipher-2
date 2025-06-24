@@ -1,0 +1,18 @@
+# hydraのdefaults listを使って、基本的な設定をpreprocessから読み込みます。
+defaults:
+  - preprocess
+  - _self_
+
+# キャッシュ処理に特化した設定
+cache:
+
+  # 特徴量の保存先ディレクトリ
+  output_dir: /home/ayu/datasets/hubert_cache/jvs_corpus
+
+  # 使用するHuBERTモデル
+  hubert_model_name: "utter-project/mHuBERT-147"
+  hubert_layer: 6
+
+  # データローダー設定
+  batch_size: 32
+  num_workers: 8
