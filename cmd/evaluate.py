@@ -29,7 +29,7 @@ def load_wav(path: Path, sr: int):
     return wav
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean_dir", required=True, type=Path)
     ap.add_argument("--degraded_dir", required=True, type=Path)
@@ -56,26 +56,28 @@ def main():
         deg_path = args.degraded_dir / rel
         res_path = args.restored_dir / rel
         if not deg_path.exists() or not res_path.exists():
-            warnings.warn(f"skip {rel} (missing degraded/restored)")
+            warnings.warn(f"skip {rel} (missing degraded/restored)", stacklevel=2)
             continue
 
         cl, deg, res = (load_wav(p, args.sr) for p in (cl_path, deg_path, res_path))
 
         rows.append(
-            dict(
-                file=str(rel),
-                MCD=U.mcd(cl, res, args.sr),
-                XvecCos=U.speaker_cos(cl.to(args.device), res.to(args.device), args.sr, xvec),
-                ECAPACos=U.speaker_cos(cl.to(args.device), res.to(args.device), args.sr, ecapa),
-                WER=U.asr_wer(cl.to(args.device), res.to(args.device), args.sr, asr_model, asr_proc, args.device),
-                logF0_RMSE=U.logf0_rmse(cl, res, args.sr),
+            {
+                "file": str(rel),
+                "MCD": U.mcd(cl, res, args.sr),
+                "XvecCos": U.speaker_cos(cl.to(args.device), res.to(args.device), args.sr, xvec),
+                "ECAPACos": U.speaker_cos(cl.to(args.device), res.to(args.device), args.sr, ecapa),
+                "WER": U.asr_wer(cl.to(args.device), res.to(args.device), args.sr, asr_model, asr_proc, args.device),
+                "logF0_RMSE": U.logf0_rmse(cl, res, args.sr),
                 # 劣化比較
-                Deg_MCD=U.mcd(cl, deg, args.sr),
-                Deg_XvecCos=U.speaker_cos(cl.to(args.device), deg.to(args.device), args.sr, xvec),
-                Deg_ECAPACos=U.speaker_cos(cl.to(args.device), deg.to(args.device), args.sr, ecapa),
-                Deg_WER=U.asr_wer(cl.to(args.device), deg.to(args.device), args.sr, asr_model, asr_proc, args.device),
-                Deg_logF0_RMSE=U.logf0_rmse(cl, deg, args.sr),
-            )
+                "Deg_MCD": U.mcd(cl, deg, args.sr),
+                "Deg_XvecCos": U.speaker_cos(cl.to(args.device), deg.to(args.device), args.sr, xvec),
+                "Deg_ECAPACos": U.speaker_cos(cl.to(args.device), deg.to(args.device), args.sr, ecapa),
+                "Deg_WER": U.asr_wer(
+                    cl.to(args.device), deg.to(args.device), args.sr, asr_model, asr_proc, args.device
+                ),
+                "Deg_logF0_RMSE": U.logf0_rmse(cl, deg, args.sr),
+            }
         )
 
         if i % args.log_every == 0 or i == tot:

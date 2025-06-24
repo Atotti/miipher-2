@@ -279,9 +279,9 @@ def load_spk_models(device: str):
 
 def load_asr(device: str):
     AutoProcessor, AutoModelForSpeechSeq2Seq = _lazy_import_transformers()
-    proc = AutoProcessor.from_pretrained("openai/whisper-large-v3")
+    proc = AutoProcessor.from_pretrained("openai/whisper-small")
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        "openai/whisper-large-v3",
+        "openai/whisper-small",
         torch_dtype=torch.float16 if "cuda" in device else torch.float32,
     ).to(device)
     model.eval()

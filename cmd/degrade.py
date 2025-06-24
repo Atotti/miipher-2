@@ -24,12 +24,13 @@ def load_noises(noise_dir: Path, sr: int = 16000):
         except Exception:
             continue
     if not pool:
-        raise RuntimeError("noise_dir から有効な wav が読み込めませんでした")
+        msg = "noise_dir から有効な wav が読み込めませんでした"
+        raise RuntimeError(msg)
     log.info(f"Loaded {len(pool)} noise files")
     return pool
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean_dir", required=True, type=Path)
     ap.add_argument("--noise_dir", required=True, type=Path)

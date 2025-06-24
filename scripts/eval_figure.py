@@ -1,10 +1,9 @@
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 import seaborn as sns
 
-
-noise_mode = "degrade"
-# noise_mode = "8khz"
+# noise_mode = "degrade"
+noise_mode = "8khz"
 
 
 df_v2 = pd.read_csv(f"results/{noise_mode}_miipher_2.csv")
@@ -47,15 +46,15 @@ g = sns.catplot(
     palette={"Degraded": "lightcoral", "Miipher": "skyblue", "Miipher2": "mediumseagreen"},
     height=4.5,
     aspect=0.8,
-    sharey=False
+    sharey=False,
 )
 
 # タイトルとラベルを調整
-g.fig.suptitle("Performance Comparison: Miipher vs Miipher2", y=1.03, size=18, weight='bold')
+g.fig.suptitle("Performance Comparison: Miipher vs Miipher2", y=1.03, size=18, weight="bold")
 g.set_xlabels("")
 g.set_ylabels("Metric Value")
 
-for i, ax in enumerate(g.axes.flat):
+for _i, ax in enumerate(g.axes.flat):
     metric_name = ax.get_title().split("= ")[1]
     if metric_name in lower_is_better:
         ax.set_title(f"{metric_name}\n(Lower is better)")
