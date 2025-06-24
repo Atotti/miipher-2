@@ -31,19 +31,19 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ### Parallel Adapter
 
 ```bash
-uv run cmd/train_adapter.py --config-name adapter_layer_4_mhubert_147
+uv run cmd/train_adapter.py --config-name adapter_layer_6_mhubert_147
 ```
 
 ### HiFi-GAN Pre-train
 
 ```bash
-uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_4_mhubert_147
+uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_6_mhubert_147
 ```
 
 ### HiFi-GAN fine-tune
 
 ```bash
-uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_4_mhubert_147
+uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_6_mhubert_147
 ```
 
 ### 学習の再開
@@ -70,9 +70,22 @@ uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft_layer_12/chec
 uv run cmd/inference.py --config-name infer
 ```
 
+## 評価
 
-## 自動評価 (DNSMOS / SQuId / WER / SPK)
-
+評価用劣化音声を生成
 ```bash
-uv run cmd/evaluate.py --config-name evaluate
+uv run cmd/degrade.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --noise_dir /home/audio/TAU2023/dataset/TAU-urban-acoustic-scenes-2022-mobile-development/audio/ --out_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples
+```
+
+劣化音声を復元
+```bash
+uv run cmd/inference_dir.py --config-name infer_dir
+```
+
+復元評価
+```bash
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2 --outfile results/degrade_miipher_2.csv && \
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher.csv && \
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher --outfile results/8khz_miipher.csv
 ```

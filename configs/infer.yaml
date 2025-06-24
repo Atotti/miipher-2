@@ -5,11 +5,10 @@ device: "cuda" # "cuda" または "cpu"
 
 # --- チェックポイントのパス ---
 # Adapter学習で生成された最終モデル
-adapter_ckpt: "exp/adapter_layer_4_mhubert_147/checkpoint_94k.pt"
+adapter_ckpt: "exp/adapter_layer_4_mhubert_147/checkpoint_159k.pt"
 
 # HiFi-GAN Fine-tuningで生成されたチェックポイント
-# `g_...` ファイルではなく、学習の途中で保存される `checkpoint_...k.pt` を指定します
-vocoder_ckpt: "exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_57k.pt"
+vocoder_ckpt: "exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_96k.pt"
 
 
 # --- モデル設定 (Fine-tuning時と一致させる) ---

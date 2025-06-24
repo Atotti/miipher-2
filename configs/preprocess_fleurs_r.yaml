@@ -1,10 +1,7 @@
 preprocess:
   preprocess_dataset:
-    _target_: torch.utils.data.ConcatDataset
-    datasets:
-      -
-        _target_: miipher_2.dataset.fleurs_r.FleursRCorpus
-        root: /home/ayu/datasets/fleurs-r/
+    _target_: miipher_2.dataset.fleurs_r.FleursRCorpus
+    root: /home/ayu/datasets/fleurs-r/
   degradation:
     format_encoding_pairs:
       - format: mp3
