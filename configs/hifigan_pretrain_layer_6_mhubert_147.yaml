@@ -37,7 +37,9 @@ optim:
     name: "cosine"
     warmup_steps: 5000
     min_lr_ratio: 0.1 # 最低 LR = initial_lr × 0.1
-  max_grad_norm: 1.0 # Gradient Clippingの上限値
+  max_grad_norm: 1.0 # Gradient Clippingの上限値
+  r1_lambda: 10.0      # R1 Regularizationの係数
+  ema_decay: 0.999     # Generator EMAの減衰率
 
 # 損失関数の重み
 lambda_mel: 25.0

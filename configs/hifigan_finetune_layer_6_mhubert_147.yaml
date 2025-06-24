@@ -34,7 +34,9 @@ optim:
     name: "cosine"
     warmup_steps: 5000
     min_lr_ratio: 0.1 # 最低 LR = initial_lr × 0.1
-  max_grad_norm: 1.0 # Gradient Clippingの上限値
+  max_grad_norm: 1.0 # Gradient Clippingの上限値
+  r1_lambda: 10.0      # R1 Regularizationの係数
+  ema_decay: 0.999     # Generator EMAの減衰率
 
 # 損失関数の重み
 lambda_mel: 25.0
@@ -47,17 +49,17 @@ log_interval: 100    # iter ごとにログ
 # Checkpoint configuration
 checkpoint:
   save_interval: 1000
-  resume_from: null        # 再開用チェックポイントパス
-  keep_last_n: 500          # 最新N個のチェックポイントを保持
+  resume_from: null      # 再開用チェックポイントパス
+  keep_last_n: 500       # 最新N個のチェックポイントを保持
   save_wandb_metadata: true # wandb情報も保存
 
 # Wandb logging configuration
 wandb:
   enabled: true
   project: "miipher-2-hifigan-finetune"
-  entity: null             # デフォルトのwandbエンティティを使用
-  name: null               # 実行名を自動生成
+  entity: null           # デフォルトのwandbエンティティを使用
+  name: null             # 実行名を自動生成
   tags: ["hifigan", "vocoder", "finetune"]
   notes: "HiFi-GAN fine-tuning for Miipher-2"
   log_model: true
-  log_audio: true          # 音声サンプルをログ
+  log_audio: true        # 音声サンプルをログ
