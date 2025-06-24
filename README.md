@@ -86,6 +86,6 @@ uv run cmd/inference_dir.py --config-name infer_dir
 ```bash
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2 --outfile results/degrade_miipher_2.csv && \
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher --outfile results/8khz_miipher.csv
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher --outfile results/8khz_miipher.csv
 ```

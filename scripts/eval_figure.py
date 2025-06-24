@@ -52,7 +52,7 @@ g = sns.catplot(
 
 # タイトルとラベルを調整
 g.fig.suptitle("Performance Comparison: Miipher vs Miipher2", y=1.03, size=18, weight='bold')
-g.set_xlabels("Audio Condition")
+g.set_xlabels("")
 g.set_ylabels("Metric Value")
 
 for i, ax in enumerate(g.axes.flat):
