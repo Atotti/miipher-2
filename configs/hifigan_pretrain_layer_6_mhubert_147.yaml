@@ -37,10 +37,12 @@ optim:
     name: "cosine"
     warmup_steps: 5000
     min_lr_ratio: 0.1 # 最低 LR = initial_lr × 0.1
+  max_grad_norm: 1.0 # Gradient Clippingの上限値
 
-lambda_stft: 1.0 # 不要かも
-lambda_mpd: 2.5
-lambda_msd: 2.5
+# 損失関数の重み
+lambda_mel: 25.0
+lambda_adv: 2.0
+lambda_fm: 1.0 # Feature Matching Lossの重み (HiFi-GANの元実装では2倍がハードコードされているため1.0で等価)
 
 # チェックポイントの保存先を事前学習用に変更
 save_dir: exp/hifigan_pretrain_layer_6_mhubert_147
