@@ -17,9 +17,7 @@ def main(cfg: DictConfig) -> None:
     print("--- Initializing Feature Caching ---")
 
     # データセットのインスタンス化 (e.g., JVSCorpus)
-    # cfg.cache.target_dataset の値 (例: 'jvs') を使って、
-    # cfg.preprocess.preprocess_datasetの中から対象を選択
-    dataset_cfg = cfg.preprocess.preprocess_dataset.datasets[0]  # JVSCorpusを想定
+    dataset_cfg = cfg.preprocess.preprocess_dataset.datasets[0]
     dataset = hydra.utils.instantiate(dataset_cfg)
     print(f"Loaded dataset: {type(dataset).__name__} with {len(dataset)} files.")
 

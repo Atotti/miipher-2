@@ -1,13 +1,12 @@
-# hydraのdefaults listを使って、基本的な設定をpreprocessから読み込みます。
 defaults:
-  - jvs_preprocess
+  - fleurs_r_preprocess
   - _self_
 
 # キャッシュ処理に特化した設定
 cache:
 
   # 特徴量の保存先ディレクトリ
-  output_dir: /home/ayu/datasets/hubert_cache/jvs_corpus
+  output_dir: /home/ayu/datasets/hubert_cache/fleurs_r_corpus
 
   # 使用するHuBERTモデル
   hubert_model_name: "utter-project/mHuBERT-147"

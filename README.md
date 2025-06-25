@@ -22,7 +22,8 @@ exp/               checkpoints 出力先
 ### 擬似劣化データセットを生成
 
 ```bash
-uv run cmd/preprocess.py --config-name preprocess
+uv run cmd/cache_features.py --config-name fleurs_r_cache_features
+uv run cmd/preprocess.py --config-name fleurs_r_preprocess
 ```
 JVSコーパス形式ダウンロードした構造から直接処理可能。出力はwebdataset形式で保存される。
 

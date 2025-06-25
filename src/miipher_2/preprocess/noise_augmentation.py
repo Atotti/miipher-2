@@ -102,7 +102,7 @@ class DegradationApplier:
         else:
             augmented = waveform
         return augmented
-
+ff
     def process(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         if len(waveform.shape) == 1:
             waveform = waveform.unsqueeze(0)

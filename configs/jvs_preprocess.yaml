@@ -67,6 +67,5 @@ preprocess:
     pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-%06d.tar.gz
   val_size: 600
   n_repeats: 4
-  # HuBERT特徴量キャッシュディレクトリ（オプション）
   feature_cache_dir: /home/ayu/datasets/hubert_cache/jvs_corpus
 sampling_rate: 22050
