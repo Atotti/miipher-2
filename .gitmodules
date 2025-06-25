@@ -1,0 +1,3 @@
+[submodule "external/ssl-vocoders"]
+	path = external/ssl-vocoders
+	url = https://github.com/Wataru-Nakata/ssl-vocoders
