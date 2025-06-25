@@ -12,6 +12,7 @@ from miipher_2.extractors.hubert import HubertExtractor
 # このスクリプトは、preprocess.yamlで定義されたデータセットを読み込み、
 # 各音声に対応するHuBERT特徴量を計算して保存します。
 
+
 @hydra.main(version_base=None, config_path="../configs", config_name="cache_features")
 def main(cfg: DictConfig) -> None:
     print("--- Initializing Feature Caching ---")
@@ -23,10 +24,14 @@ def main(cfg: DictConfig) -> None:
 
     # HubertExtractorの準備
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    hubert_extractor = HubertExtractor(
-        model_name=cfg.cache.hubert_model_name,
-        layer=cfg.cache.hubert_layer,
-    ).to(device).eval()
+    hubert_extractor = (
+        HubertExtractor(
+            model_name=cfg.cache.hubert_model_name,
+            layer=cfg.cache.hubert_layer,
+        )
+        .to(device)
+        .eval()
+    )
     print(f"HubertExtractor initialized on {device}.")
 
     # 出力ディレクトリの作成
