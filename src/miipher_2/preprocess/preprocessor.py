@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import io
 import os
 import pathlib
@@ -18,11 +19,14 @@ SAMPLING_RATE: int | None = None
 N_REPEATS: int | None = None
 FEATURE_CACHE_DIR: pathlib.Path | None = None
 
+DEGRADATION_APPLIER: DegradationApplier | None = None   # ワーカー側参照
+DEGRADATION_APPLIER_G: DegradationApplier | None = None # 親が作る実体
+
 
 def init_worker(cfg: DictConfig) -> None:
     """ワーカープロセスの初期化関数。プロセス起動時に一度だけ呼ばれる。"""
-    global DEGRADATION_APPLIER, SAMPLING_RATE, N_REPEATS, FEATURE_CACHE_DIR
-    DEGRADATION_APPLIER = DegradationApplier(cfg.preprocess.degradation)
+    global DEGRADATION_APPLIER, DEGRADATION_APPLIER_G, SAMPLING_RATE, N_REPEATS, FEATURE_CACHE_DIR
+    DEGRADATION_APPLIER = DEGRADATION_APPLIER_G
     SAMPLING_RATE = cfg.sampling_rate
     N_REPEATS = cfg.preprocess.n_repeats
     if cfg.preprocess.get("feature_cache_dir"):
@@ -89,6 +93,8 @@ class Preprocessor:
 
     def build_from_path(self) -> None:
         """データセット全体の前処理を並列で実行し、webdataset形式で保存する。"""
+        global DEGRADATION_APPLIER_G
+        DEGRADATION_APPLIER_G = DegradationApplier(self.cfg.preprocess.degradation)
         output_dir = pathlib.Path(self.cfg.preprocess.train_tar_sink.pattern).parent
         output_dir.mkdir(parents=True, exist_ok=True)
         train_sink = hydra.utils.instantiate(self.cfg.preprocess.train_tar_sink)
@@ -101,14 +107,14 @@ class Preprocessor:
         train_items = all_items[val_size:]
         val_items = all_items[:val_size]
 
-        with ProcessPoolExecutor(max_workers=num_workers, initializer=init_worker, initargs=(self.cfg,)) as executor:
+        with ProcessPoolExecutor(max_workers=num_workers, mp_context=mp.get_context("fork"), initializer=init_worker, initargs=(self.cfg,)) as executor:
             # --- ここから変更 ---
             # list()で全結果を待つのではなく、ループで結果を一つずつ処理する
 
             print("Processing validation data...")
             with tqdm.tqdm(total=len(val_items)) as pbar:
                 # executor.mapから返されるイテレータを直接ループ処理
-                for result_list in executor.map(process_item_worker, val_items):
+                for result_list in executor.map(process_item_worker, val_items, chunksize=32):
                     if result_list:
                         for sample in result_list:
                             val_sink.write(sample)
@@ -116,7 +122,7 @@ class Preprocessor:
 
             print("Processing training data...")
             with tqdm.tqdm(total=len(train_items)) as pbar:
-                for result_list in executor.map(process_item_worker, train_items):
+                for result_list in executor.map(process_item_worker, train_items, chunksize=32):
                     if result_list:
                         for sample in result_list:
                             train_sink.write(sample)

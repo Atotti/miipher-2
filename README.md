@@ -38,7 +38,7 @@ uv run cmd/train_adapter.py --config-name adapter_layer_6_mhubert_147
 ### HiFi-GAN Pre-train
 
 ```bash
-uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_6_mhubert_147
+uv run external/ssl-vocoders/src/train.py model=lv_hifigan_ssl data=jvs_hubert_l6 train=default
 ```
 
 ### HiFi-GAN fine-tune

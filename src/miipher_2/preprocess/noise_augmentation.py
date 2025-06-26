@@ -36,15 +36,17 @@ class DegradationApplier:
         self.noise_audio_paths = []
         for root, pattern in self.cfg.background_noise.patterns:
             self.noise_audio_paths.extend(list(Path(root).glob(pattern)))
+        self._eff_cache: list[tuple[dict, torchaudio.io.AudioEffector]] = []
+        for p in self.format_encoding_pairs:
+            comp = torchaudio.io.CodecConfig(compression_level=p.get("compression")) \
+                if "compression" in p else None
+            eff = torchaudio.io.AudioEffector(format=p["format"], codec_config=comp)
+            self._eff_cache.append((p, eff))
 
     def applyCodec(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
-        if len(self.format_encoding_pairs) == 0:
+        if not self._eff_cache:
             return waveform
-        param: dict = random.choice(self.format_encoding_pairs)
-        audio_format: str = param["format"]
-        compression: int | None = param.get("compression")
-        codec_config = torchaudio.io.CodecConfig(compression_level=compression) if compression else None
-        eff = torchaudio.io.AudioEffector(format=audio_format, codec_config=codec_config)
+        _, eff = random.choice(self._eff_cache)
         wav_tc = waveform.transpose(0, 1)
         aug_tc = eff.apply(wav_tc, sample_rate)
         augmented = aug_tc.transpose(0, 1).contiguous()
