@@ -1,0 +1,7 @@
+defaults:
+  - override /model: hifigan_ssl    # 768‑ch, upsample 7‑7‑3‑3
+  - override /data: jvs_hubert_l6
+  - override /train: default
+
+sample_rate: 22050
+compile: False

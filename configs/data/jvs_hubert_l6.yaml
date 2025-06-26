@@ -1,0 +1,17 @@
+datamodule:
+  _target_: lightning_vocoders.data.datamodule.VocoderDataModule
+train_dataset_path: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
+val_dataset_path:   /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
+
+train_batch_size: 32
+val_batch_size:   8
+
+target_feature:
+  key: hubert.pt          # ここを書き替えるだけ
+  samples_per_sec: 50     # 16 kHz / 320
+  bias: 0.0               # FeatureCleaner 出力と同じなら 0
+  layer: 6                # 情報用（訓練には影響しない）
+
+segment_size:             # 時間方向のサンプリング (＊秒ではなく frame 数)
+  train: 50
+  val: -1

@@ -14,8 +14,8 @@ from transformers import get_scheduler
 import wandb
 from miipher_2.data.webdataset_loader import CleanVocoderDataset
 from miipher_2.extractors.hubert import HubertExtractor
-from miipher_2.hifigan.meldataset import mel_spectrogram
-from miipher_2.hifigan.models import (
+from miipher_2.prenet.meldataset import mel_spectrogram
+from miipher_2.prenet.models import (
     Generator,
     MultiPeriodDiscriminator,
     MultiScaleDiscriminator,
@@ -23,7 +23,7 @@ from miipher_2.hifigan.models import (
     feature_loss,
     generator_loss,
 )
-from miipher_2.hifigan.prenet import Miipher2PreNet
+from miipher_2.prenet.prenet import Miipher2PreNet
 from miipher_2.utils.audio import save
 from miipher_2.utils.checkpoint import (
     get_resume_checkpoint_path,
