@@ -8,7 +8,7 @@ from torch.utils.data import Dataset
 class FleursRCorpus(Dataset):
     """
     fleurs-r コーパス用のPyTorch Datasetクラス。
-    複数の言語やサブセット（train, dev, test）を横断してデータをロードできます。
+    複数の言語やサブセット(train, dev, test)を横断してデータをロードできます。
     """
 
     def __init__(self, root: str, subset: str | list[str] = "all", language: str | list[str] = "all") -> None:
