@@ -97,7 +97,7 @@ def train_adapter(cfg: DictConfig) -> None:
     target_model = (
         HubertExtractor(
             model_name=cfg.model.hubert_model_name,
-            layer=cfg.model.hubert_layer,
+            layer=cfg.model.hubert_layer - 1,
         )
         .cuda()
         .float()

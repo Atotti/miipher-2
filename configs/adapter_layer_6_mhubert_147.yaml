@@ -1,6 +1,6 @@
 model:
   hubert_model_name: "utter-project/mHuBERT-147"  # HuBERTベースモデル名
-  hubert_layer: 6          # 使用するHuBERTの層（0-based）
+  hubert_layer: 6
   adapter_hidden_dim: 768  # Adapterの中間層の次元数
 
 dataset:

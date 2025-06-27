@@ -14,7 +14,7 @@ vocoder_ckpt: "exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_96k.pt"
 # --- モデル設定 (Fine-tuning時と一致させる) ---
 model:
   hubert_model_name: "utter-project/mHuBERT-147"
-  hubert_layer: 4
+  hubert_layer: 6
   adapter_hidden_dim: 768
 
 # --- Vocoder設定 ---

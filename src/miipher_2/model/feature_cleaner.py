@@ -13,7 +13,7 @@ class FeatureCleaner(nn.Module):
         super().__init__()
         self.extractor = HubertExtractor(
             model_name=cfg_model.hubert_model_name,
-            layer=cfg_model.hubert_layer,
+            layer=cfg_model.hubert_layer - 1,
         )
 
         # ベースとなるHuBERTの全パラメータを凍結
@@ -23,7 +23,7 @@ class FeatureCleaner(nn.Module):
 
         hubert_dim = self.extractor.hubert.config.hidden_size
 
-        num_layers_to_patch = cfg_model.hubert_layer + 1
+        num_layers_to_patch = cfg_model.hubert_layer
 
         self.adapters = nn.ModuleList(
             [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
@@ -33,7 +33,7 @@ class FeatureCleaner(nn.Module):
             original_ff_forward = blk.feed_forward.forward
             adapter_module = self.adapters[i]
 
-            # blk.feed_forward.forward を置き換えるための新しい関数を定義
+            # Adapterを挿入
             def patched_forward(
                 hidden_states: torch.Tensor,
                 _orig_ff: Callable = original_ff_forward,

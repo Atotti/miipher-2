@@ -179,7 +179,7 @@ def pre_train_vocoder(cfg: DictConfig) -> None:  # noqa: PLR0912
     )
 
     hubert_extractor = (
-        HubertExtractor(model_name=cfg.model.hubert_model_name, layer=cfg.model.hubert_layer).cuda().eval()
+        HubertExtractor(model_name=cfg.model.hubert_model_name, layer=cfg.model.hubert_layer - 1).cuda().eval()
     )
     for param in hubert_extractor.parameters():
         param.requires_grad = False
