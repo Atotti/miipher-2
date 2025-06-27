@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+  - preprocess: for_train
+  - model: hifigan_comformer
+  - train: default
+  - data: jvs_hubert_l6
+sample_rate: 22050
+compile: False

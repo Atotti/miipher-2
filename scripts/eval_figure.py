@@ -3,7 +3,7 @@ import pandas as pd
 import seaborn as sns
 
 # noise_mode = "degrade"
-noise_mode = "8khz"
+noise_mode = "PA_E3"
 
 
 df_v2 = pd.read_csv(f"results/{noise_mode}_miipher_2.csv")

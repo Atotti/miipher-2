@@ -38,7 +38,7 @@ uv run cmd/train_adapter.py --config-name adapter_layer_6_mhubert_147
 ### HiFi-GAN Pre-train
 
 ```bash
-uv run external/ssl-vocoders/src/train.py model=lv_hifigan_ssl data=jvs_hubert_l6 train=default
+uv run cmd/pre_train_hifigan.py --config-name lightning_train.yaml model=hifigan_conformer data=jvs_hubert_l6 train=default
 ```
 
 ### HiFi-GAN fine-tune
@@ -89,4 +89,6 @@ uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples -
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher.csv && \
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher --outfile results/8khz_miipher.csv
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher --outfile results/PA_E3_miipher.csv && \
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher2 --outfile results/PA_E3_miipher_2.csv
 ```

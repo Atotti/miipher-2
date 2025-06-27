@@ -38,8 +38,7 @@ class DegradationApplier:
             self.noise_audio_paths.extend(list(Path(root).glob(pattern)))
         self._eff_cache: list[tuple[dict, torchaudio.io.AudioEffector]] = []
         for p in self.format_encoding_pairs:
-            comp = torchaudio.io.CodecConfig(compression_level=p.get("compression")) \
-                if "compression" in p else None
+            comp = torchaudio.io.CodecConfig(compression_level=p.get("compression")) if "compression" in p else None
             eff = torchaudio.io.AudioEffector(format=p["format"], codec_config=comp)
             self._eff_cache.append((p, eff))
 

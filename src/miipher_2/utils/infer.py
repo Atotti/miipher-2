@@ -6,10 +6,10 @@ import torch.amp
 from omegaconf import DictConfig
 from tqdm import tqdm
 
+from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.prenet.models import Generator
 from miipher_2.prenet.prenet import Miipher2PreNet
-from miipher_2.model.feature_cleaner import FeatureCleaner
-from miipher_2.train.hifigan import AttrDict
+from miipher_2.train.finetune_hifigan import AttrDict
 from miipher_2.utils.audio import load, save
 
 

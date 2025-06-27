@@ -1,0 +1,10 @@
+defaults:
+  - hifigan_ssl
+  - _self_
+
+# 以下に hifigan_ssl.yaml から変更したい部分、追加したい部分だけを記述する
+lightning_module:
+  _target_: lightning_vocoders.models.hifigan.conformer_lightning_module.HiFiGANConformerLightningModule
+
+prenet:
+  n_layers: 2

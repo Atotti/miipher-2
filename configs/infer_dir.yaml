@@ -1,6 +1,6 @@
 # --- 一括処理の基本設定 ---
-input_dir: "/home/ayu/GitHub/miipher-plaoground/samples_8khz"   # 音声ファイルが入っているディレクトリ
-output_dir: "/home/ayu/GitHub/miipher-plaoground/8khz_miipher2" # 修復後の音声を出力するディレクトリ
+input_dir: "/home/ayu/GitHub/miipher-plaoground/PA_E3"   # 音声ファイルが入っているディレクトリ
+output_dir: "/home/ayu/GitHub/miipher-plaoground/PA_E3_miipher2" # 修復後の音声を出力するディレクトリ
 
 # 処理対象とする音声ファイルの拡張子リスト
 extensions:

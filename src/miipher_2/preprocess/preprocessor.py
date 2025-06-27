@@ -1,5 +1,5 @@
-import multiprocessing as mp
 import io
+import multiprocessing as mp
 import os
 import pathlib
 from concurrent.futures import ProcessPoolExecutor
@@ -19,8 +19,8 @@ SAMPLING_RATE: int | None = None
 N_REPEATS: int | None = None
 FEATURE_CACHE_DIR: pathlib.Path | None = None
 
-DEGRADATION_APPLIER: DegradationApplier | None = None   # ワーカー側参照
-DEGRADATION_APPLIER_G: DegradationApplier | None = None # 親が作る実体
+DEGRADATION_APPLIER: DegradationApplier | None = None  # ワーカー側参照
+DEGRADATION_APPLIER_G: DegradationApplier | None = None  # 親が作る実体
 
 
 def init_worker(cfg: DictConfig) -> None:
@@ -107,7 +107,9 @@ class Preprocessor:
         train_items = all_items[val_size:]
         val_items = all_items[:val_size]
 
-        with ProcessPoolExecutor(max_workers=num_workers, mp_context=mp.get_context("fork"), initializer=init_worker, initargs=(self.cfg,)) as executor:
+        with ProcessPoolExecutor(
+            max_workers=num_workers, mp_context=mp.get_context("fork"), initializer=init_worker, initargs=(self.cfg,)
+        ) as executor:
             # --- ここから変更 ---
             # list()で全結果を待つのではなく、ループで結果を一つずつ処理する
 

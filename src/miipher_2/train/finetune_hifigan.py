@@ -14,6 +14,7 @@ from transformers import get_scheduler
 
 import wandb
 from miipher_2.data.webdataset_loader import VocoderDataset
+from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.prenet.meldataset import mel_spectrogram
 from miipher_2.prenet.models import (
     Generator,
@@ -24,7 +25,6 @@ from miipher_2.prenet.models import (
     generator_loss,
 )
 from miipher_2.prenet.prenet import Miipher2PreNet
-from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.audio import save
 from miipher_2.utils.checkpoint import (
     get_resume_checkpoint_path,

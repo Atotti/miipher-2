@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 from miipher_2.preprocess import Preprocessor
 
 
-@hydra.main(version_base=None, config_path="../configs/", config_name="preprocess")  # type: ignore
+@hydra.main(version_base=None, config_path="../configs/", config_name=None)  # type: ignore
 def main(cfg: DictConfig) -> None:
     seed_everything(172957)
     preprocessor = Preprocessor(cfg=cfg)

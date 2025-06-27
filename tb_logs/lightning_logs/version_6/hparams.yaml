@@ -1,0 +1,126 @@
+cfg:
+  sample_rate: 22050
+  compile: false
+  preprocess:
+    stft:
+      n_fft: 1024
+      win_length: 1024
+      hop_length: 256
+      power: 1
+      center: true
+    mel:
+      n_mels: 80
+      sample_rate: 22050
+      f_min: 0
+      f_max: 8000
+      n_stft: 513
+      norm: slaney
+      mel_scale: slaney
+    audio:
+      sample_rate: 22050
+    train_tar_sink:
+      _target_: webdataset.ShardWriter
+      pattern: preprocessed_data/glob/glob-train-%06d.tar.gz
+    val_tar_sink:
+      _target_: webdataset.ShardWriter
+      pattern: preprocessed_data/glob/glob-val-%06d.tar.gz
+    val_size: 3000
+    ssl_models:
+    - - _target_: transformers.AutoModel.from_pretrained
+        pretrained_model_name_or_path: facebook/wav2vec2-base
+      - _target_: transformers.AutoFeatureExtractor.from_pretrained
+        pretrained_model_name_or_path: facebook/wav2vec2-base
+      - sr: 16000
+        key: wav2vec2-base.pth
+        layer: 12
+  model:
+    lightning_module:
+      _target_: lightning_vocoders.models.hifigan.conformer_lightning_module.HiFiGANConformerLightningModule
+    generator:
+      num_input_channels: 768
+      upsample_rates:
+      - 7
+      - 7
+      - 3
+      - 3
+      upsample_initial_channel: 512
+      upsample_kernel_sizes:
+      - 15
+      - 15
+      - 7
+      - 7
+      resblock_dilation_sizes:
+      - - 1
+        - 3
+        - 5
+      - - 1
+        - 3
+        - 5
+      - - 1
+        - 3
+        - 5
+      resblock_kernel_sizes:
+      - 3
+      - 7
+      - 11
+      resblock: '1'
+    optim:
+      opt_g:
+        _target_: torch.optim.AdamW
+        lr: 0.0002
+        betas:
+        - 0.8
+        - 0.99
+      opt_d:
+        _target_: torch.optim.AdamW
+        lr: 0.0002
+        betas:
+        - 0.8
+        - 0.99
+      scheduler_g:
+        _target_: torch.optim.lr_scheduler.ExponentialLR
+        gamma: 0.999998
+      scheduler_d:
+        _target_: torch.optim.lr_scheduler.ExponentialLR
+        gamma: 0.999998
+    adversarial_start_step: 10000
+    loss:
+      recons_coef: 45
+      fm_mpd_coef: 1
+      fm_msd_coef: 1
+      g_mpd_coef: 1
+      g_msd_coef: 1
+    logging_wav_samples: 10
+    prenet:
+      n_layers: 4
+  train:
+    trainer:
+      _target_: lightning.Trainer
+      accelerator: gpu
+      devices:
+      - 0
+      precision: 32
+      check_val_every_n_epoch: 1
+      max_epochs: 33000
+    ckpt_path: null
+    loggers:
+    - _target_: lightning.pytorch.loggers.TensorBoardLogger
+      save_dir: tb_logs
+    - _target_: lightning.pytorch.loggers.WandbLogger
+      project: hifigan-lightning
+      log_model: all
+  data:
+    datamodule:
+      _target_: lightning_vocoders.data.datamodule.VocoderDataModule
+    train_dataset_path: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
+    val_dataset_path: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
+    train_batch_size: 32
+    val_batch_size: 8
+    target_feature:
+      key: hubert.pt
+      samples_per_sec: 50
+      bias: 0.0
+      layer: 6
+    segment_size:
+      train: 50
+      val: -1

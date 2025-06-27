@@ -2,9 +2,6 @@
 
 set -e  # エラー時に即停止
 
-mkdir -p data/download
-cd data/download
-
 BASE_URL="https://www.openslr.org/resources/141"
 FILES=(
   "doc.tar.gz"
@@ -20,6 +17,7 @@ FILES=(
 )
 
 # 保存先ディレクトリを作成
+cd /home/ayu/datasets
 mkdir -p libritts_r
 cd libritts_r
 
