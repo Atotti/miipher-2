@@ -4,7 +4,7 @@ model:
   adapter_hidden_dim: 768  # Adapterの中間層の次元数
 
 dataset:
-  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000020}.tar.gz
+  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
   val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
   shuffle: 1000          # WebDataset 内部 shuffle バッファ
 batch_size: 16
