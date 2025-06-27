@@ -16,12 +16,11 @@ class PositionalEncoding(nn.Module):
         self.register_buffer("pe", pe)  # (T, C)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, C, T)
         return x + self.pe[: x.size(-1)].T  # (B, C, T)
 
 
 class ConvModule(nn.Module):
-    """Depth-wise Conv1D + GLU (ESPnet style)."""
+    """Depth-wise Conv1D + GLU (ESPnet style)."""
 
     def __init__(self, channels: int, kernel_size: int = 31) -> None:
         super().__init__()
