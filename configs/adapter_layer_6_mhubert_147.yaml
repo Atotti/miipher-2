@@ -24,7 +24,7 @@ optim:
   max_grad_norm: 1.0
   scheduler:
     name: "constant_with_warmup"
-    warmup_steps: 100
+    warmup_steps: 1000
 
 loader:
   num_workers: 8
