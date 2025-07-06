@@ -1,14 +1,15 @@
 # --- 推論の基本設定 ---
 input_wav: "/home/ayu/GitHub/miipher-plaoground/samples_8khz/F001_R1_E2_M2_AA.wav"
-output_wav: "/home/ayu/GitHub/miipher-plaoground/open_miipher_2/F001_R1_E2_M2_AA.wav"
+output_wav: "/home/ayu/GitHub/open-miipher-2/8khz_restore_sample.wav"
 device: "cuda" # "cuda" または "cpu"
 
 # --- チェックポイントのパス ---
 # Adapter学習で生成された最終モデル
-adapter_ckpt: "exp/adapter_layer_4_mhubert_147/checkpoint_159k.pt"
+adapter_ckpt: "exp/adapter_layer_6_mhubert_147/checkpoint_199k.pt"
 
-# HiFi-GAN Fine-tuningで生成されたチェックポイント
-vocoder_ckpt: "exp/hifigan_pretrain_layer_4_mhubert_147/checkpoint_96k.pt"
+# Lightning SSL-Vocoderで学習されたチェックポイント (.ckpt形式)
+# ssl-vocodersリポジトリで学習したモデルのパスを指定してください
+vocoder_ckpt: "/home/ayu/GitHub/ssl-vocoders/epoch=45-step=810824.ckpt"
 
 
 # --- モデル設定 (Fine-tuning時と一致させる) ---
@@ -17,17 +18,7 @@ model:
   hubert_layer: 6
   adapter_hidden_dim: 768
 
-# --- Vocoder設定 ---
-# Prenetのパラメータ (hifigan.pyの実装に合わせる)
-prenet:
-  in_dim: 768     # HuBERTの出力次元数と一致
-  n_layers: 4
-  mel_dim: 80
-  src_fps: 50.0
-  tgt_hop: 256
-  sr: 22050
 
-# Generatorのconfigはvocoder_ckptと同じディレクトリのconfig.jsonから自動で読み込まれます
 
 # --- 出力設定 ---
 output_sampling_rate: 22050

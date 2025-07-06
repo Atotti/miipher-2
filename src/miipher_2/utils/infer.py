@@ -1,15 +1,11 @@
-import json
 import pathlib
 
 import torch
-import torch.amp
 from omegaconf import DictConfig
 from tqdm import tqdm
 
-from miipher_2.hifigan.models import Generator
-from miipher_2.hifigan.prenet import Miipher2PreNet
+from miipher_2.lightning_vocoders.lightning_module import HiFiGANLightningModule
 from miipher_2.model.feature_cleaner import FeatureCleaner
-from miipher_2.train.hifigan import AttrDict
 from miipher_2.utils.audio import load, save
 
 
@@ -23,42 +19,34 @@ def run_inference(cfg: DictConfig) -> None:
     """
     device = torch.device(cfg.device)
 
-    # 1. FeatureCleaner ... (変更なし)
+    # 1. FeatureCleaner
     print("Loading FeatureCleaner model...")
     cleaner = FeatureCleaner(cfg.model).to(device).eval()
     adapter_checkpoint = torch.load(cfg.adapter_ckpt, map_location=device, weights_only=False)
     cleaner.load_state_dict(adapter_checkpoint["model_state_dict"])
     print("FeatureCleaner model loaded.")
 
-    # 2. Vocoder ... (変更なし)
-    print("Loading Vocoder models (Prenet + Generator)...")
-    cfg.prenet.in_dim = cleaner.extractor.hubert.config.hidden_size
-    prenet = Miipher2PreNet(**cfg.prenet).to(device).eval()
+    # 2. Vocoder (Lightning SSL-Vocoder)
+    print("Loading Lightning SSL-Vocoder...")
     vocoder_ckpt_path = pathlib.Path(cfg.vocoder_ckpt)
-    vocoder_config_path = vocoder_ckpt_path.parent / "config.json"
-    if not vocoder_config_path.exists():
-        msg = (
-            f"Vocoder config file not found at: {vocoder_config_path}\n"
-            "Please make sure 'config.json' is present in the same directory as the vocoder checkpoint."
-        )
+    if not vocoder_ckpt_path.exists():
+        msg = f"Vocoder checkpoint not found at: {vocoder_ckpt_path}"
         raise FileNotFoundError(msg)
-    with vocoder_config_path.open() as f:
-        h = AttrDict(json.load(f))
-    generator = Generator(h).to(device).eval()
-    vocoder_checkpoint = torch.load(vocoder_ckpt_path, map_location=device, weights_only=False)
-    prenet.load_state_dict(vocoder_checkpoint["prenet"])
-    generator.load_state_dict(vocoder_checkpoint["generator"])
-    print("Vocoder models loaded.")
+
+    vocoder = HiFiGANLightningModule.load_from_checkpoint(
+        vocoder_ckpt_path, map_location=device
+    ).to(device).eval()
+    print("Lightning SSL-Vocoder loaded.")
 
     # 3. 音声ファイルを読み込み、推論実行
     print(f"Processing input file: {cfg.input_wav}")
     input_wav = load(cfg.input_wav).to(device)
 
-    # 非推奨警告に対応
-    with torch.amp.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
+    with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
         cleaned_features = cleaner(input_wav)
-        mel_spectrogram = prenet(cleaned_features)
-        restored_wav = generator(mel_spectrogram)
+        # Lightning SSL-Vocoderの入力形式に合わせる (batch, seq_len, input_channels)
+        batch = {"input_feature": cleaned_features.transpose(1, 2)}
+        restored_wav = vocoder.generator_forward(batch)
 
     # 4. 修復された音声を保存
     output_path = pathlib.Path(cfg.output_wav)
@@ -86,21 +74,14 @@ def run_inference_dir(cfg: DictConfig) -> None:
     adapter_checkpoint = torch.load(cfg.adapter_ckpt, map_location=device, weights_only=False)
     cleaner.load_state_dict(adapter_checkpoint["model_state_dict"])
 
-    cfg.prenet.in_dim = cleaner.extractor.hubert.config.hidden_size
-    prenet = Miipher2PreNet(**cfg.prenet).to(device).eval()
-
     vocoder_ckpt_path = pathlib.Path(cfg.vocoder_ckpt)
-    vocoder_config_path = vocoder_ckpt_path.parent / "config.json"
-    if not vocoder_config_path.exists():
-        msg = f"Vocoder config file not found at: {vocoder_config_path}"
+    if not vocoder_ckpt_path.exists():
+        msg = f"Vocoder checkpoint not found at: {vocoder_ckpt_path}"
         raise FileNotFoundError(msg)
-    with vocoder_config_path.open() as f:
-        h = AttrDict(json.load(f))
-    generator = Generator(h).to(device).eval()
 
-    vocoder_checkpoint = torch.load(vocoder_ckpt_path, map_location=device, weights_only=False)
-    prenet.load_state_dict(vocoder_checkpoint["prenet"])
-    generator.load_state_dict(vocoder_checkpoint["generator"])
+    vocoder = HiFiGANLightningModule.load_from_checkpoint(
+        vocoder_ckpt_path, map_location=device
+    ).to(device).eval()
     print("Models loaded successfully.")
 
     # 2. 入力ファイルリストを作成
@@ -125,7 +106,6 @@ def run_inference_dir(cfg: DictConfig) -> None:
     # 3. 各ファイルに対してループ処理を実行
     for input_path in tqdm(audio_files, desc="Processing files"):
         try:
-            # 出力パスを決定 (入力ディレクトリの構造を維持します)
             relative_path = input_path.relative_to(input_dir)
             output_path = output_dir / relative_path
 
@@ -136,15 +116,16 @@ def run_inference_dir(cfg: DictConfig) -> None:
             input_wav = load(input_path).to(device)
 
             # 3b. 推論実行
-            with torch.amp.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
+            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=(device.type == "cuda")):
                 cleaned_features = cleaner(input_wav)
-                mel_spectrogram = prenet(cleaned_features)
-                restored_wav = generator(mel_spectrogram)
+                # Lightning SSL-Vocoderの入力形式に合わせる (batch, seq_len, input_channels)
+                batch = {"input_feature": cleaned_features.transpose(1, 2)}
+                restored_wav = vocoder.generator_forward(batch)
 
             # 3c. 修復された音声を保存
             save(output_path, restored_wav.squeeze(0).cpu().to(torch.float32), sr=cfg.output_sampling_rate)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # エラーが発生しても処理を止めず、エラーメッセージを表示して次のファイルへ進みます
             tqdm.write(f"Failed to process {input_path}: {e}")
 
