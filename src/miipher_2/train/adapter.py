@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 from torch import nn, optim
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from transformers import get_scheduler
+from transformers.optimization import get_scheduler
 
 import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
@@ -110,16 +110,25 @@ def train_adapter(cfg: DictConfig) -> None:
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=cfg.optim.lr,
         weight_decay=cfg.optim.weight_decay,
-        betas=tuple(cfg.optim.betas),
+        betas=(cfg.optim.betas[0], cfg.optim.betas[1]),
     )
 
-    # スケジューラの総ステップ数をcfg.stepsから直接取得
-    scheduler = get_scheduler(
-        name=cfg.optim.scheduler.name,
-        optimizer=opt,
-        num_warmup_steps=cfg.optim.scheduler.warmup_steps,
-        num_training_steps=cfg.steps,
-    )
+    # スケジューラの設定
+    if cfg.optim.scheduler.name == "cosine_with_restarts":
+        from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+        scheduler = CosineAnnealingWarmRestarts(
+            optimizer=opt,
+            T_0=cfg.optim.scheduler.first_cycle_steps,
+            T_mult=int(cfg.optim.scheduler.cycle_mult),
+            eta_min=cfg.optim.scheduler.min_lr,
+        )
+    else:
+        scheduler = get_scheduler(
+            name=cfg.optim.scheduler.name,
+            optimizer=opt,
+            num_warmup_steps=cfg.optim.scheduler.warmup_steps,
+            num_training_steps=cfg.steps,
+        )
 
     start_it = 0
     if resumed_checkpoint:
