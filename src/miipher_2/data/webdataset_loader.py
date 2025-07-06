@@ -17,10 +17,16 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
 class AdapterDataset(IterableDataset):
     """Adapter学習用: 全て16kHzに変換する"""
 
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
+    def __init__(self, pattern: str | list[str], shuffle: int = 1000) -> None:
+        # 複数のパターンに対応
+        if isinstance(pattern, str):
+            patterns = [pattern]
+        else:
+            patterns = pattern
+            
         self.dataset = (
             wds.WebDataset(
-                pattern,
+                patterns,
                 resampled=True,
                 nodesplitter=wds.split_by_node,
             )
