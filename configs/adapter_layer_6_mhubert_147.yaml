@@ -4,13 +4,17 @@ model:
   adapter_hidden_dim: 768  # Adapterの中間層の次元数
 
 dataset:
-  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
-  val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
+  path_pattern:
+    - /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
+    - /home/ayu/datasets/fleurs-r_preprocessed/fleurs-r-train-{000000..000910}.tar.gz
+    - /home/ayu/datasets/libritts_r_preprocessed/libritts_r-train-{000000..000504}.tar.gz
+  val_path_pattern:
+    - /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
   shuffle: 1000          # WebDataset 内部 shuffle バッファ
 batch_size: 16
-steps: 200000
-validation_interval: 1000
-validation_batches: 25
+steps: 2000000
+validation_interval: 10000
+validation_batches: 16
 
 training:
   gradient_accumulation_steps: 1
@@ -24,18 +28,18 @@ optim:
   max_grad_norm: 1.0
   scheduler:
     name: "constant_with_warmup"
-    warmup_steps: 1000
+    warmup_steps: 10000
 
 loader:
   num_workers: 8
   pin_memory: true
 
-save_dir: exp/adapter_layer_6_mhubert_147
-log_interval: 100        # iter ごとに損失表示
+save_dir: exp/adapter_layer_6_mhubert_147_multi_lang  # チェックポイント保存先
+log_interval: 1000        # iter ごとに損失表示
 
 # Checkpoint configuration
 checkpoint:
-  save_interval: 1000      # 1kステップごとにチェックポイント保存
+  save_interval: 10000      # 1kステップごとにチェックポイント保存
   resume_from: null        # 再開用チェックポイントパス
   keep_last_n: 500          # 最新N個のチェックポイントを保持
   save_wandb_metadata: true # wandb情報も保存
