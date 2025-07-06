@@ -1,6 +1,6 @@
 # open-miipher-2
 
-HuBERT + Parallel Adapter + HiFi-GAN で [Miipher-2](https://arxiv.org/abs/2505.04457) を再現するリポジトリです。
+HuBERT + Parallel Adapter + Lightning SSL-Vocoder で [Miipher-2](https://arxiv.org/abs/2505.04457) を再現するリポジトリです。
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ uv sync
 ## Directory Structure
 
 ```
-configs/           hydra yaml (preprocess, adapter, hifigan, infer)
+configs/           hydra yaml (preprocess, adapter, infer)
 src/miipher_2/     python modules
 cmd/               entry-point CLI wrappers
 exp/               checkpoints 出力先
@@ -19,7 +19,7 @@ exp/               checkpoints 出力先
 
 ## データの前処理
 
-### 擬似劣化データセットを生成
+### 擬似劣化データセットを生成
 
 ```bash
 uv run cmd/preprocess.py --config-name preprocess
@@ -34,30 +34,17 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 uv run cmd/train_adapter.py --config-name adapter_layer_6_mhubert_147
 ```
 
-### HiFi-GAN Pre-train
+### Lightning SSL-Vocoder
 
-```bash
-uv run cmd/pre_train_vocoder.py --config-name hifigan_pretrain_layer_6_mhubert_147
-```
-
-### HiFi-GAN fine-tune
-
-```bash
-uv run cmd/finetune_vocoder.py --config-name hifigan_finetune_layer_6_mhubert_147
-```
+SSL-vocoderはssl-vocodersリポジトリで学習します
+学習済みモデルは推論設定ファイルで指定します。
 
 ### 学習の再開
 
 特定のチェックポイントから再開
 ```bash
 # Adapter学習の再開
-uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_4_mhubert_147/checkpoint_87k.pt" --config-name adapter_layer_4_mhubert_147
-
-# HiFi-GAN pretrainの再開
-uv run cmd/pre_train_vocoder.py checkpoint.resume_from="exp/hifigan_pretrain_layer_12/checkpoint_5k.pt"
-
-# HiFi-GAN finetuneの再開
-uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft_layer_12/checkpoint_10k.pt"
+uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_6_mhubert_147/checkpoint_199k.pt" --config-name adapter_layer_6_mhubert_147
 ```
 ※明示的に指定しない限り、checkpoint作成時のconfigが継承される
 
@@ -66,8 +53,11 @@ uv run cmd/train_vocoder.py checkpoint.resume_from="exp/hifigan_ft_layer_12/chec
 
 ## 推論
 
+### 設定ファイルの準備
+
+### バッチ推論
 ```bash
-uv run cmd/inference.py --config-name infer
+uv run cmd/inference_dir.py --config-name infer_dir
 ```
 
 ## 評価
@@ -85,9 +75,6 @@ uv run cmd/inference_dir.py --config-name infer_dir
 復元評価
 ```bash
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2 --outfile results/degrade_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher.csv && \
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher --outfile results/8khz_miipher.csv
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher2 --outfile results/PA_E3_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher --outfile results/PA_E3_miipher.csv```
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher_2 --outfile results/PA_E3_miipher_2.csv
 ```
