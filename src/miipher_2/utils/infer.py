@@ -33,9 +33,7 @@ def run_inference(cfg: DictConfig) -> None:
         msg = f"Vocoder checkpoint not found at: {vocoder_ckpt_path}"
         raise FileNotFoundError(msg)
 
-    vocoder = HiFiGANLightningModule.load_from_checkpoint(
-        vocoder_ckpt_path, map_location=device
-    ).to(device).eval()
+    vocoder = HiFiGANLightningModule.load_from_checkpoint(vocoder_ckpt_path, map_location=device).to(device).eval()
     print("Lightning SSL-Vocoder loaded.")
 
     # 3. 音声ファイルを読み込み、推論実行
@@ -79,9 +77,7 @@ def run_inference_dir(cfg: DictConfig) -> None:
         msg = f"Vocoder checkpoint not found at: {vocoder_ckpt_path}"
         raise FileNotFoundError(msg)
 
-    vocoder = HiFiGANLightningModule.load_from_checkpoint(
-        vocoder_ckpt_path, map_location=device
-    ).to(device).eval()
+    vocoder = HiFiGANLightningModule.load_from_checkpoint(vocoder_ckpt_path, map_location=device).to(device).eval()
     print("Models loaded successfully.")
 
     # 2. 入力ファイルリストを作成

@@ -86,7 +86,7 @@ def train_adapter(cfg: DictConfig) -> None:
     val_dl = DataLoader(
         AdapterDataset(cfg.dataset.val_path_pattern, shuffle=False),  # シャッフルは不要
         batch_size=cfg.batch_size,
-        num_workers=cfg.loader.num_workers,
+        num_workers=2,
         pin_memory=cfg.loader.pin_memory,
         collate_fn=collate_tensors,
         drop_last=False,
@@ -116,6 +116,7 @@ def train_adapter(cfg: DictConfig) -> None:
     # スケジューラの設定
     if cfg.optim.scheduler.name == "cosine_with_restarts":
         from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+
         scheduler = CosineAnnealingWarmRestarts(
             optimizer=opt,
             T_0=cfg.optim.scheduler.first_cycle_steps,

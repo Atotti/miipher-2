@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 
+import braceexpand
 import torch
 import torchaudio
 import webdataset as wds
@@ -17,18 +18,11 @@ def _ensure_2d(tensor: torch.Tensor) -> torch.Tensor:
 class AdapterDataset(IterableDataset):
     """Adapter学習用: 全て16kHzに変換する"""
 
-    def __init__(self, pattern: str | list[str], shuffle: int = 1000) -> None:
-        # 複数のパターンに対応
-        if isinstance(pattern, str):
-            patterns = [pattern]
-        else:
-            patterns = pattern
-            
+    def __init__(self, pattern: list[str], shuffle: int = 1000) -> None:
+        expanded_urls = [url for p in pattern for url in braceexpand.braceexpand(p)]
         self.dataset = (
             wds.WebDataset(
-                patterns,
-                resampled=True,
-                nodesplitter=wds.split_by_node,
+                expanded_urls,
             )
             .shuffle(shuffle)
             .decode(wds.torch_audio)
@@ -60,7 +54,7 @@ class VocoderDataset(IterableDataset):
     """
 
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+        self.dataset = wds.WebDataset(pattern).shuffle(shuffle).decode(wds.torch_audio)
         self.input_sr = 16000
         self.target_sr = 22050
 
@@ -90,7 +84,7 @@ class CleanVocoderDataset(IterableDataset):
     """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力"""
 
     def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+        self.dataset = wds.WebDataset(pattern).shuffle(shuffle).decode(wds.torch_audio)
         self.input_sr = 16000
         self.target_sr = 22050
 

@@ -173,7 +173,7 @@ class Generator(torch.nn.Module):
             ffn_dim=conformer_ffn_dim,
             num_layers=1,
             depthwise_conv_kernel_size=conformer_depthwise_conv_kernel_size,
-            dropout=conformer_dropout
+            dropout=conformer_dropout,
         )
         self.conformer2 = Conformer(
             input_dim=conformer_dim,
@@ -181,13 +181,11 @@ class Generator(torch.nn.Module):
             ffn_dim=conformer_ffn_dim,
             num_layers=1,
             depthwise_conv_kernel_size=conformer_depthwise_conv_kernel_size,
-            dropout=conformer_dropout
+            dropout=conformer_dropout,
         )
         self.output_projection = nn.Linear(conformer_dim, h.upsample_initial_channel)
 
-        self.conv_pre = weight_norm(
-            Conv1d(h.upsample_initial_channel, h.upsample_initial_channel, 7, 1, padding=3)
-        )
+        self.conv_pre = weight_norm(Conv1d(h.upsample_initial_channel, h.upsample_initial_channel, 7, 1, padding=3))
         resblock = ResBlock1 if h.resblock == "1" else ResBlock2
 
         self.ups = nn.ModuleList()
@@ -207,9 +205,7 @@ class Generator(torch.nn.Module):
         self.resblocks = nn.ModuleList()
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel // (2 ** (i + 1))
-            for j, (k, d) in enumerate(
-                zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes, strict=False)
-            ):
+            for j, (k, d) in enumerate(zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes, strict=False)):
                 self.resblocks.append(resblock(h, ch, k, d))
 
         self.conv_post = weight_norm(Conv1d(ch, 1, 7, 1, padding=3))
@@ -394,9 +390,7 @@ class MultiScaleDiscriminator(torch.nn.Module):
                 DiscriminatorS(),
             ]
         )
-        self.meanpools = nn.ModuleList(
-            [AvgPool1d(4, 2, padding=2), AvgPool1d(4, 2, padding=2)]
-        )
+        self.meanpools = nn.ModuleList([AvgPool1d(4, 2, padding=2), AvgPool1d(4, 2, padding=2)])
 
     def forward(self, y, y_hat):
         y_d_rs = []

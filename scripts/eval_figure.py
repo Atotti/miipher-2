@@ -5,7 +5,6 @@ import seaborn as sns
 noise_modes = ["degrade", "8khz", "PA_E3"]
 
 for noise_mode in noise_modes:
-
     df_v2 = pd.read_csv(f"results/{noise_mode}_miipher_2.csv")
     df_v1 = pd.read_csv(f"results/{noise_mode}_miipher.csv")
 
