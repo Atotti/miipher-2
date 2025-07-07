@@ -1,12 +1,12 @@
 model:
-  hubert_model_name: "utter-project/mHuBERT-147"  # HuBERTベースモデル名
-  hubert_layer: 6
-  adapter_hidden_dim: 768  # Adapterの中間層の次元数
+  hubert_model_name: "Atotti/Google-USM"
+  hubert_layer: 12
+  adapter_hidden_dim: 1536  # Adapterの中間層の次元数
 
 dataset:
   path_pattern:
     - /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
-    - /home/ayu/datasets/fleurs-r_preprocessed/fleurs-r-train-{000000..000918}.tar.gz
+    - /home/ayu/datasets/fleurs-r_preprocessed/fleurs-r-train-{000000..000910}.tar.gz
     - /home/ayu/datasets/libritts_r_preprocessed/libritts_r-train-{000000..000504}.tar.gz
   val_path_pattern:
     - /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
@@ -14,7 +14,7 @@ dataset:
 batch_size: 16
 steps: 2000000
 validation_interval: 10000
-validation_batches: 1
+validation_batches: 16
 
 training:
   gradient_accumulation_steps: 1
@@ -38,7 +38,7 @@ loader:
   num_workers: 8
   pin_memory: true
 
-save_dir: exp/adapter_layer_6_mhubert_147_multi_lang  # チェックポイント保存先
+save_dir: exp/usm  # チェックポイント保存先
 log_interval: 1000        # iter ごとに損失表示
 
 # Checkpoint configuration
@@ -54,6 +54,6 @@ wandb:
   project: "miipher-2-adapter"
   entity: null             # デフォルトのwandbエンティティを使用
   name: null               # 実行名を自動生成
-  tags: ["hubert", "adapter", "training"]
+  tags: ["usm", "adapter", "training"]
   notes: "Parallel Adapter training for Miipher-2"
   log_model: false

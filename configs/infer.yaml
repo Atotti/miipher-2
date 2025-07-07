@@ -1,6 +1,6 @@
 # --- 推論の基本設定 ---
-input_wav: "/home/ayu/GitHub/miipher-plaoground/samples_8khz/F001_R1_E2_M2_AA.wav"
-output_wav: "/home/ayu/GitHub/open-miipher-2/8khz_restore_sample.wav"
+input_wav: "samples/sample.wav"
+output_wav: "samples/miipher2.wav"
 device: "cuda" # "cuda" または "cpu"
 
 # --- チェックポイントのパス ---
@@ -9,10 +9,8 @@ adapter_ckpt: "exp/adapter_layer_6_mhubert_147/checkpoint_199k.pt"
 
 # Lightning SSL-Vocoderで学習されたチェックポイント (.ckpt形式)
 # ssl-vocodersリポジトリで学習したモデルのパスを指定してください
-vocoder_ckpt: "/home/ayu/GitHub/ssl-vocoders/epoch=45-step=810824.ckpt"
+vocoder_ckpt: "/home/ayu/GitHub/ssl-vocoders/epoch=49-step=882200.ckpt"
 
-
-# --- モデル設定 (Fine-tuning時と一致させる) ---
 model:
   hubert_model_name: "utter-project/mHuBERT-147"
   hubert_layer: 6

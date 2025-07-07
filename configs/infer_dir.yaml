@@ -15,7 +15,7 @@ adapter_ckpt: "exp/adapter_layer_6_mhubert_147/checkpoint_199k.pt"
 
 # Lightning SSL-Vocoderで学習されたチェックポイント (.ckpt形式)
 # ssl-vocodersリポジトリで学習したモデルのパスを指定してください
-vocoder_ckpt: "/home/ayu/GitHub/ssl-vocoders/epoch=45-step=810824.ckpt"
+vocoder_ckpt: "/home/ayu/GitHub/ssl-vocoders/epoch=49-step=882200.ckpt"
 
 
 # --- モデル設定 (Fine-tuning時と一致させる) ---
