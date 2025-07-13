@@ -3,6 +3,7 @@ from collections.abc import Iterator
 import torch
 import torchaudio
 import webdataset as wds
+from braceexpand import braceexpand
 from torch.utils.data import IterableDataset
 
 
@@ -23,12 +24,17 @@ class AdapterDataset(IterableDataset):
             patterns = [pattern]
         else:
             patterns = pattern
-            
+        
+        # ブレース展開を適用
+        expanded_patterns = []
+        for p in patterns:
+            expanded_patterns.extend(list(braceexpand(p)))
+
         self.dataset = (
             wds.WebDataset(
-                patterns,
+                expanded_patterns,
                 resampled=True,
-                nodesplitter=wds.split_by_node,
+                shardshuffle=True,
             )
             .shuffle(shuffle)
             .decode(wds.torch_audio)
@@ -59,8 +65,19 @@ class VocoderDataset(IterableDataset):
         IterableDataset (_type_): _description_
     """
 
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+    def __init__(self, pattern: str | list[str], shuffle: int = 1000) -> None:
+        # 複数のパターンに対応
+        if isinstance(pattern, str):
+            patterns = [pattern]
+        else:
+            patterns = pattern
+        
+        # ブレース展開を適用
+        expanded_patterns = []
+        for p in patterns:
+            expanded_patterns.extend(list(braceexpand(p)))
+
+        self.dataset = wds.WebDataset(expanded_patterns, resampled=True, shardshuffle=True).shuffle(shuffle).decode(wds.torch_audio)
         self.input_sr = 16000
         self.target_sr = 22050
 
@@ -89,8 +106,19 @@ class VocoderDataset(IterableDataset):
 class CleanVocoderDataset(IterableDataset):
     """Vocoder事前学習用: クリーン音声を16kHzと22.05kHzの両方で出力"""
 
-    def __init__(self, pattern: str, shuffle: int = 1000) -> None:
-        self.dataset = wds.WebDataset(pattern, resampled=True).shuffle(shuffle).decode(wds.torch_audio)
+    def __init__(self, pattern: str | list[str], shuffle: int = 1000) -> None:
+        # 複数のパターンに対応
+        if isinstance(pattern, str):
+            patterns = [pattern]
+        else:
+            patterns = pattern
+        
+        # ブレース展開を適用
+        expanded_patterns = []
+        for p in patterns:
+            expanded_patterns.extend(list(braceexpand(p)))
+
+        self.dataset = wds.WebDataset(expanded_patterns, resampled=True, shardshuffle=True).shuffle(shuffle).decode(wds.torch_audio)
         self.input_sr = 16000
         self.target_sr = 22050
 

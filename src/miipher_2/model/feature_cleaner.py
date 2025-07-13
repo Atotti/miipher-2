@@ -5,23 +5,25 @@ from omegaconf import DictConfig
 from torch import nn
 
 from miipher_2.adapters.parallel_adapter import ParallelAdapter
-from miipher_2.extractors.hubert import HubertExtractor
+from miipher_2.extractors.hubert import SSLExtractor
 
 
 class FeatureCleaner(nn.Module):
     def __init__(self, cfg_model: DictConfig) -> None:
         super().__init__()
-        self.extractor = HubertExtractor(
+        model_type = cfg_model.get("model_type", "auto")
+        self.extractor = SSLExtractor(
             model_name=cfg_model.hubert_model_name,
             layer=cfg_model.hubert_layer - 1,
+            model_type=model_type,
         )
 
-        # ベースとなるHuBERTの全パラメータを凍結
-        self.extractor.hubert.eval()
-        for param in self.extractor.hubert.parameters():
+        # ベースとなるSSLモデルの全パラメータを凍結
+        self.extractor.model.eval()
+        for param in self.extractor.model.parameters():
             param.requires_grad = False
 
-        hubert_dim = self.extractor.hubert.config.hidden_size
+        hubert_dim = self.extractor.model.config.hidden_size
 
         num_layers_to_patch = cfg_model.hubert_layer
 
@@ -29,7 +31,7 @@ class FeatureCleaner(nn.Module):
             [ParallelAdapter(dim=hubert_dim, hidden=cfg_model.adapter_hidden_dim) for _ in range(num_layers_to_patch)]
         )
 
-        for i, blk in enumerate(self.extractor.hubert.encoder.layers[:num_layers_to_patch]):
+        for i, blk in enumerate(self.extractor.model.encoder.layers[:num_layers_to_patch]):
             original_ff_forward = blk.feed_forward.forward
             adapter_module = self.adapters[i]
 

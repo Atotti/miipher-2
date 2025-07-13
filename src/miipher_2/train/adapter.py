@@ -9,7 +9,7 @@ from transformers.optimization import get_scheduler
 
 import wandb
 from miipher_2.data.webdataset_loader import AdapterDataset
-from miipher_2.extractors.hubert import HubertExtractor
+from miipher_2.extractors.hubert import SSLExtractor
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.utils.checkpoint import (
     get_resume_checkpoint_path,
@@ -94,10 +94,13 @@ def train_adapter(cfg: DictConfig) -> None:
 
     model = FeatureCleaner(cfg.model).cuda().float()
 
+    # SSLExtractorを使用してモデルタイプを自動判定またはconfigから取得
+    model_type = cfg.model.get("model_type", "auto")
     target_model = (
-        HubertExtractor(
+        SSLExtractor(
             model_name=cfg.model.hubert_model_name,
             layer=cfg.model.hubert_layer - 1,
+            model_type=model_type,
         )
         .cuda()
         .float()
@@ -116,6 +119,7 @@ def train_adapter(cfg: DictConfig) -> None:
     # スケジューラの設定
     if cfg.optim.scheduler.name == "cosine_with_restarts":
         from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+
         scheduler = CosineAnnealingWarmRestarts(
             optimizer=opt,
             T_0=cfg.optim.scheduler.first_cycle_steps,

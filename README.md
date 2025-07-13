@@ -22,7 +22,7 @@ exp/               checkpoints 出力先
 ### 擬似劣化データセットを生成
 
 ```bash
-uv run cmd/preprocess.py --config-name preprocess
+uv run cmds/preprocess.py --config-name preprocess
 ```
 JVSコーパス形式ダウンロードした構造から直接処理可能。出力はwebdataset形式で保存される。
 
@@ -31,7 +31,7 @@ JVSコーパス形式ダウンロードした構造から直接処理可能。�
 ### Parallel Adapter
 
 ```bash
-uv run cmd/train_adapter.py --config-name adapter_layer_6_mhubert_147
+uv run cmds/train_adapter.py --config-name adapter_l2
 ```
 
 ### Lightning SSL-Vocoder
@@ -44,7 +44,7 @@ SSL-vocoderはssl-vocodersリポジトリで学習します
 特定のチェックポイントから再開
 ```bash
 # Adapter学習の再開
-uv run cmd/train_adapter.py checkpoint.resume_from="exp/adapter_layer_6_mhubert_147/checkpoint_199k.pt" --config-name adapter_layer_6_mhubert_147
+uv run cmds/train_adapter.py checkpoint.resume_from="exp/adapter_l2/checkpoint_80k.pt" --config-name adapter_l2
 ```
 ※明示的に指定しない限り、checkpoint作成時のconfigが継承される
 
@@ -75,6 +75,16 @@ uv run cmd/inference_dir.py --config-name infer_dir
 復元評価
 ```bash
 uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2 --outfile results/degrade_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --degraded_dir /home/ayu/GitHub/miipher-plaoground/PA_E3 --restored_dir /home/ayu/GitHub/miipher-plaoground/PA_E3_miipher_2 --outfile results/PA_E3_miipher_2.csv
+uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv
+```
+
+
+```bash
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2/ --outfile results/degrade_miipher_2.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher_1.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples/ --outfile results/degrade.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2/ --outfile results/8khz_miipher_2.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher/ --outfile results/8khz_miipher_1.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz/ --outfile results/8khz.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples/ --outfile results/original.csv
 ```

@@ -1,16 +1,19 @@
 model:
-  hubert_model_name: "utter-project/mHuBERT-147"  # HuBERTベースモデル名
-  hubert_layer: 7
-  adapter_hidden_dim: 768  # Adapterの中間層の次元数
+  hubert_model_name: "imprt/izanami-wav2vec2-large"  # SSLモデル名
+  hubert_layer: 2
+  adapter_hidden_dim: 1024  # Adapterの中間層の次元数
+  model_type: "wav2vec2"  # モデルタイプを明示的に指定
 
 dataset:
-  path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
-  val_path_pattern: /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
+  path_pattern:
+    - /home/ayu/datasets/jvs_preprocessed/jvs-train-{000000..000025}.tar.gz
+  val_path_pattern:
+    - /home/ayu/datasets/jvs_preprocessed/jvs-val-{000000..000001}.tar.gz
   shuffle: 1000          # WebDataset 内部 shuffle バッファ
-batch_size: 16
+batch_size: 8
 steps: 200000
-validation_interval: 1000
-validation_batches: 25
+validation_interval: 500
+validation_batches: 1
 
 training:
   gradient_accumulation_steps: 1
@@ -30,7 +33,7 @@ loader:
   num_workers: 8
   pin_memory: true
 
-save_dir: exp/adapter_l7
+save_dir: exp/wav2vec2_large_l2
 log_interval: 100        # iter ごとに損失表示
 
 # Checkpoint configuration
@@ -46,6 +49,6 @@ wandb:
   project: "miipher-2-adapter"
   entity: null             # デフォルトのwandbエンティティを使用
   name: null               # 実行名を自動生成
-  tags: ["hubert", "adapter", "training"]
+  tags: ["wav2vec2", "adapter", "training"]
   notes: "Parallel Adapter training for Miipher-2"
   log_model: false

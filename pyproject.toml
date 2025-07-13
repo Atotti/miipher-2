@@ -24,6 +24,7 @@ dependencies = [
     "torch>=2.7.0",
     "torchaudio>=2.7.0",
     "torchinfo>=1.8.0",
+    "torchmetrics[audio]>=1.0.0",
     "tqdm>=4.67.1",
     "transformers>=4.53.1",
     "trl[peft]>=0.18.1",
@@ -126,3 +127,4 @@ ignore_missing_source = true
 [tool.pyrefly.errors]
 bad-assignment = false
 invalid-argument = false
+
