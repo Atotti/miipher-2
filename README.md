@@ -74,17 +74,18 @@ uv run cmd/inference_dir.py --config-name infer_dir
 
 復元評価
 ```bash
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2 --outfile results/degrade_miipher_2.csv && \
-uv run cmd/evaluate.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --degraded_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2 --outfile results/8khz_miipher_2.csv
-```
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/hubert_large_l2/degrade_samples --outfile results/hubert_large_l2/degrade_samples.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/hubert_large_l2/samples_8khz_16khz --outfile results/hubert_large_l2/samples_8khz_16khz.csv &&\
+\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/mhubert_l6/degrade_samples --outfile results/mhubert_l6/degrade_samples.csv  &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/mhubert_l6/samples_8khz_16khz --outfile results/mhubert_l6/samples_8khz_16khz.csv  &&\
+\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/wav2vec2_base_l2/degrade_samples --outfile results/wav2vec2_base_l2/degrade_samples.csv  &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/wav2vec2_base_l2/samples_8khz_16khz --outfile results/wav2vec2_base_l2/samples_8khz_16khz.csv &&\
+\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/wavlm_base_l2/degrade_samples --outfile results/wavlm_base_l2/degrade_samples.csv  &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/wavlm_base_l2/samples_8khz_16khz --outfile results/wavlm_base_l2/samples_8khz_16khz.csv
 
-
-```bash
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/open_miipher_2/ --outfile results/degrade_miipher_2.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_miipher_super_resolve/ --outfile results/degrade_miipher_1.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples/ --outfile results/degrade.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher2/ --outfile results/8khz_miipher_2.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/8khz_miipher/ --outfile results/8khz_miipher_1.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz/ --outfile results/8khz.csv &&\
-uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples/ --outfile results/original.csv
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/samples_8khz_16khz --outfile results/samples_8khz_16khz.csv &&\
+uv run cmds/evaluate_simple.py --clean_dir /home/ayu/GitHub/miipher-plaoground/samples --restored_dir /home/ayu/GitHub/miipher-plaoground/degrade_samples --outfile results/degrade_samples.csv
 ```

@@ -1,0 +1,20 @@
+# --- 推論の基本設定 ---
+input_wav: "samples/sample.wav"
+output_wav: "samples/miipher2_wavlm_base_l2.wav"
+device: "cuda"
+
+
+adapter_ckpt: "/home/ayu/GitHub/open-miipher-2/exp/wavlm_base_l2/checkpoint_199k.pt"
+
+vocoder_ckpt: /home/ayu/GitHub/ssl-vocoders/tb_logs/lightning_logs/version_28/checkpoints/epoch=219-step=404920.ckpt
+
+
+# --- モデル設定 (Fine-tuning時と一致させる) ---
+model:
+  hubert_model_name: "microsoft/wavlm-base"
+  hubert_layer: 2
+  adapter_hidden_dim: 768
+
+
+# --- 出力設定 ---
+output_sampling_rate: 22050

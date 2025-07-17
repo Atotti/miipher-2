@@ -1,5 +1,5 @@
 model:
-  hubert_model_name: "imprt/izanami-wav2vec2-large"  # SSLモデル名
+  hubert_model_name: "facebook/wav2vec2-large-xlsr-53"  # SSLモデル名
   hubert_layer: 2
   adapter_hidden_dim: 1024  # Adapterの中間層の次元数
   model_type: "wav2vec2"  # モデルタイプを明示的に指定
