@@ -1,0 +1,27 @@
+{
+  "model_type": "miipher2",
+  "architecture": "speech_enhancement",
+  "components": {
+    "adapter": {
+      "architecture": "parallel_adapter",
+      "base_model": "utter-project/mHuBERT-147",
+      "hubert_layer": 6,
+      "adapter_hidden_dim": 768,
+      "checkpoint_file": "checkpoint_199k_fixed.pt",
+      "training_steps": "199k"
+    },
+    "vocoder": {
+      "architecture": "lightning_ssl_vocoder",
+      "base_architecture": "hifigan",
+      "checkpoint_file": "epoch=77-step=137108.ckpt",
+      "training_epoch": 77,
+      "training_step": 137108
+    }
+  },
+  "model_description": "Miipher-2: Complete speech enhancement system with Parallel Adapter and SSL-Vocoder",
+  "output_sampling_rate": 22050,
+  "version": "1.0.0",
+  "paper": "Miipher-2: Speech Enhancement with Parallel Adapters",
+  "license": "Apache-2.0",
+  "authors": "Miipher-2 Team"
+}
