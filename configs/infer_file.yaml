@@ -5,7 +5,7 @@ device: "cuda"
 
 adapter_ckpt: "/home/ayu/GitHub/open-miipher-2/exp/adapter_layer_6_mhubert_147/checkpoint_199k_fixed.pt"
 
-vocoder_ckpt: /home/ayu/GitHub/ssl-vocoders/tb_logs/lightning_logs/version_12/checkpoints/epoch=58-step=1042796.ckpt
+vocoder_ckpt: /home/ayu/GitHub/open-miipher-2/exp/ssl-vocoder/epoch=77-step=137108.ckpt
 
 model:
   hubert_model_name: "utter-project/mHuBERT-147"
