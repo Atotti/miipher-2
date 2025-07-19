@@ -128,3 +128,8 @@ ignore_missing_source = true
 bad-assignment = false
 invalid-argument = false
 
+[tool.uv.workspace]
+members = [
+    "miipher2-hf",
+]
+

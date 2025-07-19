@@ -1,0 +1,3 @@
+[submodule "miipher2-hf"]
+	path = miipher2-hf
+	url = https://github.com/Atotti/miipher2-hf.git

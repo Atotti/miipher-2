@@ -1,9 +1,8 @@
 import torch
 import torch.nn.functional as F
-from torch import nn
-from torch.nn import AvgPool1d, Conv1d, Conv2d, ConvTranspose1d
-from torch.nn.utils import remove_weight_norm, spectral_norm, weight_norm
-from torchaudio.models import Conformer
+import torch.nn as nn
+from torch.nn import Conv1d, ConvTranspose1d, AvgPool1d, Conv2d
+from torch.nn.utils import weight_norm, remove_weight_norm, spectral_norm
 
 LRELU_SLOPE = 0.1
 
@@ -95,7 +94,7 @@ class ResBlock1(torch.nn.Module):
         self.convs2.apply(init_weights)
 
     def forward(self, x):
-        for c1, c2 in zip(self.convs1, self.convs2, strict=False):
+        for c1, c2 in zip(self.convs1, self.convs2):
             xt = F.leaky_relu(x, LRELU_SLOPE)
             xt = c1(xt)
             xt = F.leaky_relu(xt, LRELU_SLOPE)
@@ -158,40 +157,13 @@ class Generator(torch.nn.Module):
         self.h = h
         self.num_kernels = len(h.resblock_kernel_sizes)
         self.num_upsamples = len(h.upsample_rates)
-
-        # Add 2 Conformer layers at the beginning
-        conformer_dim = getattr(h, "conformer_dim", 768)
-        conformer_num_heads = getattr(h, "conformer_num_heads", 8)
-        conformer_ffn_dim = getattr(h, "conformer_ffn_dim", 1024)
-        conformer_depthwise_conv_kernel_size = getattr(h, "conformer_conv_kernel_size", 31)
-        conformer_dropout = getattr(h, "conformer_dropout", 0.1)
-
-        self.input_projection = nn.Linear(h.num_input_channels, conformer_dim)
-        self.conformer1 = Conformer(
-            input_dim=conformer_dim,
-            num_heads=conformer_num_heads,
-            ffn_dim=conformer_ffn_dim,
-            num_layers=1,
-            depthwise_conv_kernel_size=conformer_depthwise_conv_kernel_size,
-            dropout=conformer_dropout
-        )
-        self.conformer2 = Conformer(
-            input_dim=conformer_dim,
-            num_heads=conformer_num_heads,
-            ffn_dim=conformer_ffn_dim,
-            num_layers=1,
-            depthwise_conv_kernel_size=conformer_depthwise_conv_kernel_size,
-            dropout=conformer_dropout
-        )
-        self.output_projection = nn.Linear(conformer_dim, h.upsample_initial_channel)
-
         self.conv_pre = weight_norm(
-            Conv1d(h.upsample_initial_channel, h.upsample_initial_channel, 7, 1, padding=3)
+            Conv1d(h.num_input_channels, h.upsample_initial_channel, 7, 1, padding=3)
         )
         resblock = ResBlock1 if h.resblock == "1" else ResBlock2
 
         self.ups = nn.ModuleList()
-        for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes, strict=False)):
+        for i, (u, k) in enumerate(zip(h.upsample_rates, h.upsample_kernel_sizes)):
             self.ups.append(
                 weight_norm(
                     ConvTranspose1d(
@@ -208,7 +180,7 @@ class Generator(torch.nn.Module):
         for i in range(len(self.ups)):
             ch = h.upsample_initial_channel // (2 ** (i + 1))
             for j, (k, d) in enumerate(
-                zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes, strict=False)
+                zip(h.resblock_kernel_sizes, h.resblock_dilation_sizes)
             ):
                 self.resblocks.append(resblock(h, ch, k, d))
 
@@ -217,18 +189,7 @@ class Generator(torch.nn.Module):
         self.conv_post.apply(init_weights)
 
     def forward(self, x):
-        # x shape: (batch, seq_len, input_channels)
-        batch_size, seq_len, _ = x.shape
-
-        # Apply Conformer layers
-        x = self.input_projection(x)  # (batch, seq_len, conformer_dim)
-        x, _ = self.conformer1(x, torch.full((batch_size,), seq_len, dtype=torch.long, device=x.device))
-        x, _ = self.conformer2(x, torch.full((batch_size,), seq_len, dtype=torch.long, device=x.device))
-        x = self.output_projection(x)  # (batch, seq_len, upsample_initial_channel)
-
-        # Transpose for conv1d and apply pre-conv
-        x = self.conv_pre(x.transpose(1, 2))  # (batch, channels, seq_len)
-
+        x = self.conv_pre(x.transpose(1, 2))
         for i in range(self.num_upsamples):
             x = F.leaky_relu(x, LRELU_SLOPE)
             x = self.ups[i](x)
@@ -419,8 +380,8 @@ class MultiScaleDiscriminator(torch.nn.Module):
 
 def feature_loss(fmap_r, fmap_g):
     loss = 0
-    for dr, dg in zip(fmap_r, fmap_g, strict=False):
-        for rl, gl in zip(dr, dg, strict=False):
+    for dr, dg in zip(fmap_r, fmap_g):
+        for rl, gl in zip(dr, dg):
             loss += torch.mean(torch.abs(rl - gl))
 
     return loss * 2
@@ -430,7 +391,7 @@ def discriminator_loss(disc_real_outputs, disc_generated_outputs):
     loss = 0
     r_losses = []
     g_losses = []
-    for dr, dg in zip(disc_real_outputs, disc_generated_outputs, strict=False):
+    for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
         r_loss = torch.mean((1 - dr) ** 2)
         g_loss = torch.mean(dg**2)
         loss += r_loss + g_loss
