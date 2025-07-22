@@ -1,232 +1,232 @@
 import gradio as gr
 import torch
+import torchaudio
 import numpy as np
-import pathlib
-from omegaconf import DictConfig
-import librosa
+from pathlib import Path
 from huggingface_hub import hf_hub_download
+from omegaconf import DictConfig
+import sys
 import os
 
-# モデルの初期化フラグ
-_models_loaded = False
-_cleaner = None
-_vocoder = None
-_device = None
+# Add parent directory to path to import miipher_2 modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from miipher_2.model.feature_cleaner import FeatureCleaner
+from miipher_2.lightning_vocoders.lightning_module import HiFiGANLightningModule
+
+# Model configuration
+MODEL_REPO_ID = "Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1"
+ADAPTER_FILENAME = "checkpoint_199k_fixed.pt"
+VOCODER_FILENAME = "epoch=77-step=137108.ckpt"
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+SAMPLE_RATE_INPUT = 16000
+SAMPLE_RATE_OUTPUT = 22050
+
+# Cache for models
+models_cache = {}
 
 def download_models():
-    """Hugging Face Hubからモデルをダウンロード"""
-    try:
-        print("Downloading models from Hugging Face Hub...")
-        
-        # Adapter model
-        adapter_path = hf_hub_download(
-            repo_id="Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1",
-            filename="checkpoint_199k_fixed.pt",
-            cache_dir="./models"
-        )
-        
-        # Vocoder model  
-        vocoder_path = hf_hub_download(
-            repo_id="Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1",
-            filename="epoch=77-step=137108.ckpt",
-            cache_dir="./models"
-        )
-        
-        return adapter_path, vocoder_path
-        
-    except Exception as e:
-        print(f"Model download failed: {e}")
-        return None, None
+    """Download models from Hugging Face Hub"""
+    print("Downloading models from Hugging Face Hub...")
+
+    adapter_path = hf_hub_download(
+        repo_id=MODEL_REPO_ID,
+        filename=ADAPTER_FILENAME,
+        cache_dir="./models"
+    )
+
+    vocoder_path = hf_hub_download(
+        repo_id=MODEL_REPO_ID,
+        filename=VOCODER_FILENAME,
+        cache_dir="./models"
+    )
+
+    return adapter_path, vocoder_path
 
 def load_models():
-    """モデルを一度だけ読み込む"""
-    global _models_loaded, _cleaner, _vocoder, _device
-    
-    if _models_loaded:
-        return
-    
-    try:
-        # デバイス設定
-        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # FeatureCleaner
-        from miipher_2.model.feature_cleaner import FeatureCleaner
-        from miipher_2.lightning_vocoders.lightning_module import HiFiGANLightningModule
-        
-        # 設定を辞書として定義
-        model_config = DictConfig({
-            "hubert_model_name": "utter-project/mHuBERT-147",
-            "hubert_layer": 6,
-            "adapter_hidden_dim": 768
-        })
-        
-        print("Loading FeatureCleaner model...")
-        _cleaner = FeatureCleaner(model_config).to(_device).eval()
-        
-        # モデルをダウンロード
-        adapter_path, vocoder_path = download_models()
-        
-        # ローカルファイルも確認
-        local_adapter = "checkpoint_199k_fixed.pt"
-        local_vocoder = "epoch=77-step=137108.ckpt"
-        
-        adapter_ckpt_path = adapter_path if adapter_path else local_adapter
-        vocoder_ckpt_path = vocoder_path if vocoder_path else local_vocoder
-        
-        if pathlib.Path(adapter_ckpt_path).exists():
-            adapter_checkpoint = torch.load(adapter_ckpt_path, map_location=_device, weights_only=False)
-            _cleaner.load_state_dict(adapter_checkpoint["model_state_dict"])
-            print("FeatureCleaner model loaded.")
-        else:
-            print("⚠️ Adapter checkpoint not found. Running without trained adapter.")
-        
-        # Vocoder
-        if pathlib.Path(vocoder_ckpt_path).exists():
-            print("Loading Lightning SSL-Vocoder...")
-            _vocoder = HiFiGANLightningModule.load_from_checkpoint(
-                vocoder_ckpt_path, map_location=_device
-            ).to(_device).eval()
-            print("Lightning SSL-Vocoder loaded.")
-        else:
-            print("⚠️ Vocoder checkpoint not found. Cannot generate audio.")
-            _vocoder = None
-        
-        _models_loaded = True
-        
-    except Exception as e:
-        print(f"Model loading failed: {e}")
-        # デモ用にダミーモデルを設定
-        _cleaner = None
-        _vocoder = None
-        _models_loaded = True
+    """Load models into memory"""
+    if "cleaner" in models_cache and "vocoder" in models_cache:
+        return models_cache["cleaner"], models_cache["vocoder"]
 
-def process_audio(input_audio):
-    """音声ファイルを処理して修復された音声を返す"""
-    if input_audio is None:
-        return None, "音声ファイルがアップロードされていません。"
-    
-    try:
-        # モデルを読み込み
-        load_models()
-        
-        if _cleaner is None or _vocoder is None:
-            return None, "⚠️ モデルが利用できません。これはデモ版です。"
-        
-        # 音声ファイルを読み込み（Gradioは(sample_rate, audio_data)のタプルを返す）
-        sample_rate, audio_data = input_audio
-        
-        # 音声データをfloat32に変換し、正規化
-        if audio_data.dtype == np.int16:
-            audio_data = audio_data.astype(np.float32) / 32768.0
-        elif audio_data.dtype == np.int32:
-            audio_data = audio_data.astype(np.float32) / 2147483648.0
-        
-        # ステレオの場合はモノラルに変換
-        if len(audio_data.shape) > 1:
-            audio_data = np.mean(audio_data, axis=1)
-        
-        # 22050Hzにリサンプリング
-        if sample_rate != 22050:
-            audio_data = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=22050)
-        
-        # PyTorchテンソルに変換
-        input_wav = torch.from_numpy(audio_data).unsqueeze(0).to(_device)
-        
-        # 推論実行
-        with torch.inference_mode():
-            with torch.autocast(device_type=_device.type, dtype=torch.float16, enabled=(_device.type == "cuda")):
-                cleaned_features = _cleaner(input_wav)
-                batch = {"input_feature": cleaned_features.transpose(1, 2)}
-                restored_wav = _vocoder.generator_forward(batch)
-        
-        # 出力音声を準備
-        output_audio = restored_wav.squeeze(0).cpu().to(torch.float32).numpy()
-        
-        return (22050, output_audio), "✅ 音声修復が完了しました！"
-        
-    except Exception as e:
-        return None, f"❌ エラーが発生しました: {str(e)}"
+    adapter_path, vocoder_path = download_models()
 
-def create_demo():
-    """Gradioデモインターフェースを作成"""
-    
-    with gr.Blocks(title="Miipher-2 音声修復デモ", theme=gr.themes.Soft()) as demo:
-        gr.Markdown("""
-        # 🎵 Miipher-2 音声修復デモ
+    # Model configuration
+    model_config = DictConfig({
+        "hubert_model_name": "utter-project/mHuBERT-147",
+        "hubert_layer": 6,
+        "adapter_hidden_dim": 768
+    })
+
+    # Initialize FeatureCleaner
+    print("Loading FeatureCleaner...")
+    cleaner = FeatureCleaner(model_config).to(DEVICE).eval()
+
+    # Load adapter weights
+    adapter_checkpoint = torch.load(adapter_path, map_location=DEVICE, weights_only=False)
+    cleaner.load_state_dict(adapter_checkpoint["model_state_dict"])
+
+    # Load vocoder
+    print("Loading vocoder...")
+    vocoder = HiFiGANLightningModule.load_from_checkpoint(
+        vocoder_path, map_location=DEVICE
+    ).to(DEVICE).eval()
+
+    # Cache models
+    models_cache["cleaner"] = cleaner
+    models_cache["vocoder"] = vocoder
+
+    return cleaner, vocoder
+
+@torch.inference_mode()
+def enhance_audio(audio_path, progress=gr.Progress()):
+    """Enhance audio using Miipher-2 model"""
+    try:
+        progress(0, desc="Loading models...")
+        cleaner, vocoder = load_models()
+
+        progress(0.2, desc="Loading audio...")
+        # Load audio
+        waveform, sr = torchaudio.load(audio_path)
+
+        # Resample to 16kHz if needed
+        if sr != SAMPLE_RATE_INPUT:
+            waveform = torchaudio.functional.resample(waveform, sr, SAMPLE_RATE_INPUT)
+
+        # Convert to mono if stereo
+        waveform = waveform.mean(0, keepdim=True)
+
+        # Move to device
+        waveform = waveform.to(DEVICE)
+
+        progress(0.4, desc="Extracting features...")
+        # Extract features using FeatureCleaner
+        with torch.no_grad(), torch.autocast(device_type=DEVICE.type, dtype=torch.float16, enabled=(DEVICE.type == "cuda")):
+            features = cleaner(waveform)
+
+            # Ensure correct shape for vocoder
+            if features.dim() == 2:
+                features = features.unsqueeze(0)
+
+            progress(0.7, desc="Generating enhanced audio...")
+            # Generate audio using vocoder
+            # Lightning SSL-Vocoderの入力形式に合わせる (batch, seq_len, input_channels)
+            batch = {"input_feature": features.transpose(1, 2)}
+            enhanced_audio = vocoder.generator_forward(batch)
+
+            # Convert to numpy
+            enhanced_audio = enhanced_audio.squeeze(0).cpu().to(torch.float32).detach().numpy()
+
+        progress(1.0, desc="Enhancement complete!")
+
+        # Save audio using torchaudio to avoid Gradio format issues
+        enhanced_audio = np.clip(enhanced_audio, -1.0, 1.0)
+        enhanced_audio_tensor = torch.from_numpy(enhanced_audio)
         
-        このデモは、Miipher-2を使用して劣化した音声を修復します。
+        # Ensure 2D tensor: (channels, samples)
+        if enhanced_audio_tensor.dim() == 1:
+            enhanced_audio_tensor = enhanced_audio_tensor.unsqueeze(0)
         
-        **使用方法:**
-        1. マイクから録音するか、音声ファイルをアップロードしてください
-        2. 「音声を修復」ボタンをクリックしてください
-        3. 修復された音声が下部に表示されます
-        
-        **モデル情報:**
-        - モデルはHugging Face Hubから自動ダウンロードされます
-        - Model: [Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1](https://huggingface.co/Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1)
-        - 統合モデル（Adapter + Vocoder）を使用
-        """)
-        
+        # Save to temporary file using torchaudio
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            torchaudio.save(tmp_file.name, enhanced_audio_tensor, SAMPLE_RATE_OUTPUT)
+            return tmp_file.name
+
+    except Exception as e:
+        raise gr.Error(f"Error during enhancement: {str(e)}")
+
+# Create Gradio interface
+def create_interface():
+    title = "🎤 Miipher-2 Speech Enhancement"
+
+    description = """
+    <div style="text-align: center;">
+        <p>High-quality speech enhancement using <b>Miipher-2</b> (HuBERT + Parallel Adapter + HiFi-GAN)</p>
+        <p>📄 <a href="https://arxiv.org/abs/2505.04457">Paper</a> |
+           🤗 <a href="https://huggingface.co/Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1">Model</a> |
+           💻 <a href="https://github.com/your-repo/open-miipher-2">GitHub</a></p>
+    </div>
+    """
+
+    article = """
+    ## How it works
+
+    1. **Upload** a noisy or degraded audio file
+    2. **Process** using Miipher-2 model
+    3. **Download** the enhanced audio
+
+    ### Model Details
+    - **SSL Backbone**: mHuBERT-147 (Multilingual)
+    - **Adapter**: Parallel adapters at layer 6
+    - **Vocoder**: HiFi-GAN trained on SSL features
+    - **Input**: Any sample rate (automatically resampled to 16kHz)
+    - **Output**: 22.05kHz high-quality audio
+
+    ### Tips
+    - Works best with speech audio
+    - Supports various noise types (background noise, reverb, etc.)
+    - Processing time depends on audio length and hardware
+    """
+
+    examples = [
+        ["examples/noisy_speech_1.wav"],
+        ["examples/noisy_speech_2.wav"],
+        ["examples/reverb_speech.wav"],
+    ]
+
+    with gr.Blocks(title=title, theme=gr.themes.Soft()) as demo:
+        gr.Markdown(f"# {title}")
+        gr.Markdown(description)
+
         with gr.Row():
             with gr.Column():
-                gr.Markdown("### 📤 入力音声")
                 input_audio = gr.Audio(
-                    label="音声をアップロードまたは録音",
-                    type="numpy",
-                    format="wav"
+                    label="Input Audio (Noisy/Degraded)",
+                    type="filepath",
+                    sources=["upload", "microphone"]
                 )
-                
-                process_btn = gr.Button("🔧 音声を修復", variant="primary", size="lg")
-                
+
+                enhance_btn = gr.Button("🚀 Enhance Audio", variant="primary")
+
             with gr.Column():
-                gr.Markdown("### 📥 修復された音声")
                 output_audio = gr.Audio(
-                    label="修復された音声",
-                    type="numpy",
-                    format="wav"
+                    label="Enhanced Audio",
+                    type="filepath",
+                    interactive=False
                 )
-                
-                status_text = gr.Textbox(
-                    label="ステータス",
-                    interactive=False,
-                    lines=2
+
+        # Add examples if they exist
+        examples_dir = Path("examples")
+        if examples_dir.exists():
+            example_files = list(examples_dir.glob("*.wav")) + list(examples_dir.glob("*.mp3"))
+            if example_files:
+                gr.Examples(
+                    examples=[[str(f)] for f in example_files[:3]],
+                    inputs=input_audio,
+                    outputs=output_audio,
+                    fn=enhance_audio,
+                    cache_examples=True
                 )
-        
-        # サンプル音声セクション
-        gr.Markdown("""
-        ### 📚 技術情報
-        
-        **Miipher-2** は以下の技術を使用しています：
-        - **SSL特徴抽出**: mHuBERT-147 (6層目の特徴を使用)
-        - **Parallel Adapter**: 軽量なフィードフォワードネットワーク
-        - **Lightning SSL-Vocoder**: HiFi-GANベースの音声合成
-        
-        **対応フォーマット**: WAV, MP3, FLAC (22050Hz推奨)
-        """)
-        
-        # イベントハンドラ
-        process_btn.click(
-            fn=process_audio,
-            inputs=[input_audio],
-            outputs=[output_audio, status_text]
+
+        gr.Markdown(article)
+
+        # Connect the enhancement function
+        enhance_btn.click(
+            fn=enhance_audio,
+            inputs=input_audio,
+            outputs=output_audio,
+            show_progress=True
         )
-        
-        # サンプル例の追加
-        with gr.Row():
-            gr.Examples(
-                examples=[],  # サンプルファイルがある場合はここに追加
-                inputs=[input_audio],
-                outputs=[output_audio, status_text],
-                fn=process_audio,
-                cache_examples=False
-            )
-    
+
     return demo
 
+# Launch the app
 if __name__ == "__main__":
-    demo = create_demo()
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        share=False
-    )
+    # Pre-load models
+    print("Pre-loading models...")
+    load_models()
+    print("Models loaded successfully!")
+
+    # Create and launch interface
+    demo = create_interface()
+    demo.launch()

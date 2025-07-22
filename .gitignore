@@ -20,3 +20,4 @@ wandb/
 exp/
 assets/
 outputs/
+models/
