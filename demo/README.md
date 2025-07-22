@@ -1,6 +1,7 @@
 ---
 title: Miipher-2 Speech Enhancement
 emoji: 🎤
+python_version: 3.12.10
 colorFrom: blue
 colorTo: purple
 sdk: gradio

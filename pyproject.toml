@@ -3,7 +3,7 @@ name = "miipher-2"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.7.0",
     "datasets>=3.6.0",
@@ -30,6 +30,7 @@ dependencies = [
     "trl[peft]>=0.18.1",
     "wandb>=0.19.11",
     "webdataset>=0.2.111",
+    "numba>=0.61.2",
 ]
 
 [build-system]
