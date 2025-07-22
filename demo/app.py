@@ -5,11 +5,6 @@ import numpy as np
 from pathlib import Path
 from huggingface_hub import hf_hub_download
 from omegaconf import DictConfig
-import sys
-import os
-
-# Add parent directory to path to import miipher_2 modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from miipher_2.model.feature_cleaner import FeatureCleaner
 from miipher_2.lightning_vocoders.lightning_module import HiFiGANLightningModule
@@ -121,11 +116,11 @@ def enhance_audio(audio_path, progress=gr.Progress()):
         # Save audio using torchaudio to avoid Gradio format issues
         enhanced_audio = np.clip(enhanced_audio, -1.0, 1.0)
         enhanced_audio_tensor = torch.from_numpy(enhanced_audio)
-        
+
         # Ensure 2D tensor: (channels, samples)
         if enhanced_audio_tensor.dim() == 1:
             enhanced_audio_tensor = enhanced_audio_tensor.unsqueeze(0)
-        
+
         # Save to temporary file using torchaudio
         import tempfile
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:

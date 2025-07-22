@@ -26,3 +26,6 @@ huggingface_hub>=0.16.0
 
 # Additional utilities
 tqdm>=4.65.0
+
+# miipher-2 implementation
+git+https://github.com/Atotti/miipher-2.git
