@@ -1,14 +1,13 @@
 ---
-title: Miipher-2 Speech Enhancement
+title: Miipher 2 HuBERT HiFi GAN V0.1
 emoji: 🎤
-python_version: 3.12.10
 colorFrom: blue
 colorTo: purple
 sdk: gradio
-sdk_version: 4.0.0
+sdk_version: 5.38.0
 app_file: app.py
 pinned: false
-license: mit
+license: apache-2.0
 models:
   - Atotti/miipher-2-HuBERT-HiFi-GAN-v0.1
 ---
